@@ -1,6 +1,6 @@
 package ports
 
-import "github.com/gabrielcapilla/yogo/internal/domain"
+import "yogo/internal/domain"
 
 type StorageService interface {
 	AddToHistory(entry domain.HistoryEntry) error

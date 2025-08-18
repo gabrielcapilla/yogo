@@ -4,8 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/gabrielcapilla/yogo/internal/domain"
-	"github.com/gabrielcapilla/yogo/internal/ports"
+	"yogo/internal/domain"
+	"yogo/internal/ports"
+
 	"go.etcd.io/bbolt"
 )
 

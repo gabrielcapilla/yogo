@@ -6,8 +6,8 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/gabrielcapilla/yogo/internal/domain"
-	"github.com/gabrielcapilla/yogo/internal/ports"
+	"yogo/internal/domain"
+	"yogo/internal/ports"
 )
 
 type ytdlpResponse struct {

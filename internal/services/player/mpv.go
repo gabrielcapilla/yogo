@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/gabrielcapilla/yogo/internal/ports"
+	"yogo/internal/ports"
 )
 
 type MpvCommand struct {
