@@ -30,7 +30,7 @@ func InitialModel() AppModel {
 }
 
 func (m AppModel) Init() tea.Cmd {
-	return nil // No necesitamos ningún comando inicial por ahora.
+	return nil
 }
 
 func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -100,7 +100,7 @@ func (m AppModel) renderTopBar() string {
 }
 
 func (m AppModel) renderMainContent(height int) string {
-	mainStyle := m.styles.MainContent.Copy().
+	mainStyle := m.styles.MainContent.
 		Width(m.width - 2).
 		Height(height - 2)
 
