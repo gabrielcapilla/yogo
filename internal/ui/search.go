@@ -3,29 +3,21 @@ package ui
 import (
 	"fmt"
 	"io"
-
 	"yogo/internal/domain"
 	"yogo/internal/ports"
 
 	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
-var (
-	itemStyle         = lipgloss.NewStyle().PaddingLeft(4)
-	selectedItemStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(lipgloss.Color("170"))
-	titleStyle        = lipgloss.NewStyle().MarginLeft(2)
-)
-
-type searchItem struct {
-	song domain.Song
-}
+type searchItem struct{ song domain.Song }
 
 func (i searchItem) FilterValue() string { return i.song.Title }
 
-type itemDelegate struct{}
+type itemDelegate struct{ styles Styles }
 
 func (d itemDelegate) Height() int                               { return 1 }
 func (d itemDelegate) Spacing() int                              { return 0 }
@@ -35,53 +27,57 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	if !ok {
 		return
 	}
-
-	str := fmt.Sprintf("%d. %s", index+1, i.song.Title)
-
-	fn := itemStyle.Render
+	style := d.styles.ListNormal
+	pointer := "  "
 	if index == m.Index() {
-		fn = func(s ...string) string {
-			return selectedItemStyle.Render("> " + lipgloss.JoinHorizontal(lipgloss.Left, s...))
-		}
+		style = d.styles.ListSelected
+		pointer = d.styles.ListPointer.String()
 	}
-
-	fmt.Fprint(w, fn(str))
+	line := truncate(i.song.Title, m.Width()-2)
+	fmt.Fprint(w, style.Render(pointer+line))
 }
 
 type SearchModel struct {
+	width, height  int
 	youtubeService ports.YoutubeService
 	textInput      textinput.Model
 	resultsList    list.Model
+	spinner        spinner.Model
 	isLoading      bool
 	err            error
-	width, height  int
+	styles         Styles
 }
 
-func NewSearchModel(service ports.YoutubeService) SearchModel {
+func NewSearchModel(service ports.YoutubeService, styles Styles) SearchModel {
 	ti := textinput.New()
-	ti.Placeholder = "Lofi hip hop radio..."
+	ti.Placeholder = "Busca una canción..."
 	ti.Focus()
-	ti.CharLimit = 156
-	ti.Width = 50
+	ti.Prompt = "> "
+	ti.PromptStyle = styles.SearchPrompt
 
-	li := list.New([]list.Item{}, itemDelegate{}, 0, 0)
-	li.Title = "Resultados de la Búsqueda"
-	li.Styles.Title = titleStyle
+	li := list.New([]list.Item{}, itemDelegate{styles: styles}, 0, 0)
+	li.SetShowTitle(false)
 	li.SetShowStatusBar(false)
-	li.SetFilteringEnabled(false)
+	li.SetShowPagination(false)
+	li.SetShowHelp(false)
 
-	return SearchModel{
-		youtubeService: service,
-		textInput:      ti,
-		resultsList:    li,
-	}
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = styles.Spinner
+
+	return SearchModel{youtubeService: service, textInput: ti, resultsList: li, spinner: s, styles: styles}
 }
 
-func (m SearchModel) Init() tea.Cmd {
-	return textinput.Blink
+func (m *SearchModel) Init() tea.Cmd { return tea.Batch(textinput.Blink, m.spinner.Tick) }
+
+func (m *SearchModel) SetSize(w, h int) {
+	m.width = w
+	m.height = h
+	m.textInput.Width = w - 2
+	m.resultsList.SetSize(w, h-1)
 }
 
-func (m SearchModel) performSearch() tea.Msg {
+func (m *SearchModel) performSearch() tea.Msg {
 	songs, err := m.youtubeService.Search(m.textInput.Value())
 	if err != nil {
 		return searchErrorMsg{err}
@@ -89,18 +85,11 @@ func (m SearchModel) performSearch() tea.Msg {
 	return searchResultsMsg{songs}
 }
 
-func (m SearchModel) Update(msg tea.Msg) (SearchModel, tea.Cmd) {
+func (m *SearchModel) Update(msg tea.Msg) (SearchModel, tea.Cmd) {
 	var cmd tea.Cmd
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
-	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
-		m.resultsList.SetWidth(msg.Width - 2)
-		m.resultsList.SetHeight(msg.Height - 10)
-		return m, nil
-
 	case searchResultsMsg:
 		m.isLoading = false
 		items := make([]list.Item, len(msg.songs))
@@ -108,60 +97,55 @@ func (m SearchModel) Update(msg tea.Msg) (SearchModel, tea.Cmd) {
 			items[i] = searchItem{song: song}
 		}
 		m.resultsList.SetItems(items)
-		return m, nil
-
+		return *m, nil
 	case searchErrorMsg:
 		m.isLoading = false
 		m.err = msg.err
-		return m, nil
-
+		return *m, nil
 	case tea.KeyMsg:
 		if m.textInput.Focused() {
 			switch msg.String() {
-			case "tab":
+			case "tab", "shift+tab", "down", "up":
 				m.textInput.Blur()
 			case "enter":
 				m.isLoading = true
 				m.err = nil
 				m.textInput.Blur()
-				return m, m.performSearch
-			default:
-				m.textInput, cmd = m.textInput.Update(msg)
-				cmds = append(cmds, cmd)
+				return *m, m.performSearch
 			}
 		} else {
 			switch msg.String() {
-			case "tab":
+			case "tab", "shift+tab":
 				m.textInput.Focus()
 			case "enter":
-				selectedItem, ok := m.resultsList.SelectedItem().(searchItem)
-				if ok {
-					return m, func() tea.Msg {
-						return playSongMsg(selectedItem)
-					}
+				if selectedItem, ok := m.resultsList.SelectedItem().(searchItem); ok {
+					return *m, func() tea.Msg { return playSongMsg(selectedItem) }
 				}
-			default:
-				m.resultsList, cmd = m.resultsList.Update(msg)
-				cmds = append(cmds, cmd)
 			}
 		}
 	}
 
-	return m, tea.Batch(cmds...)
+	if m.isLoading {
+		m.spinner, cmd = m.spinner.Update(msg)
+	} else if m.textInput.Focused() {
+		m.textInput, cmd = m.textInput.Update(msg)
+	} else {
+		m.resultsList, cmd = m.resultsList.Update(msg)
+	}
+	cmds = append(cmds, cmd)
+
+	return *m, tea.Batch(cmds...)
 }
 
 func (m SearchModel) View() string {
-	searchViewStyle := lipgloss.NewStyle().Padding(1, 2)
 	inputView := m.textInput.View()
-	var mainView string
-
+	var resultsView string
 	if m.isLoading {
-		mainView = "Buscando..."
+		resultsView = m.spinner.View() + " Buscando..."
 	} else if m.err != nil {
-		mainView = fmt.Sprintf("Error: %v", m.err)
+		resultsView = m.styles.ErrorText.Render(fmt.Sprintf("Error: %v", m.err))
 	} else {
-		mainView = m.resultsList.View()
+		resultsView = m.resultsList.View()
 	}
-
-	return searchViewStyle.Render(lipgloss.JoinVertical(lipgloss.Left, inputView, mainView))
+	return lipgloss.JoinVertical(lipgloss.Left, inputView, resultsView)
 }

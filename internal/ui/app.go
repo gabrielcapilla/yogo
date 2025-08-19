@@ -1,8 +1,6 @@
 package ui
 
 import (
-	"fmt"
-
 	"yogo/internal/domain"
 	"yogo/internal/ports"
 
@@ -10,42 +8,32 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-type viewState int
-
 const (
-	globalView viewState = iota
-	searchView
-	historyView
+	MIN_WIDTH  = 50
+	MIN_HEIGHT = 15
 )
 
 type AppModel struct {
-	state          viewState
-	width          int
-	height         int
-	styles         Styles
+	width, height  int
 	youtubeService ports.YoutubeService
 	playerService  ports.PlayerService
 	search         SearchModel
-
-	playerStatus     string
-	currentlyPlaying domain.Song
-	playerError      error
+	player         PlayerModel
+	styles         Styles
 }
 
 func InitialModel(ytService ports.YoutubeService, pService ports.PlayerService) AppModel {
+	styles := DefaultStyles()
 	return AppModel{
-		state:          globalView,
-		styles:         DefaultStyles(),
 		youtubeService: ytService,
 		playerService:  pService,
-		search:         NewSearchModel(ytService),
-		playerStatus:   "Idle",
+		search:         NewSearchModel(ytService, styles),
+		player:         NewPlayerModel(styles),
+		styles:         styles,
 	}
 }
 
-func (m AppModel) Init() tea.Cmd {
-	return m.search.Init()
-}
+func (m AppModel) Init() tea.Cmd { return m.search.Init() }
 
 func getStreamURLCmd(service ports.YoutubeService, song domain.Song) tea.Cmd {
 	return func() tea.Msg {
@@ -58,163 +46,77 @@ func getStreamURLCmd(service ports.YoutubeService, song domain.Song) tea.Cmd {
 }
 
 func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	var cmds []tea.Cmd
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		var cmd tea.Cmd
-		m.search, cmd = m.search.Update(msg)
-		return m, cmd
 	case tea.KeyMsg:
-		if msg.Type == tea.KeyCtrlC {
+		if msg.String() == "ctrl+c" || msg.String() == "q" {
 			return m, tea.Quit
 		}
 	case playSongMsg:
-		m.playerStatus = fmt.Sprintf("Cargando: %s...", msg.song.Title)
-		m.currentlyPlaying = msg.song
-		m.playerError = nil
+		m.player.SetContent("Cargando", msg.song, nil)
 		return m, getStreamURLCmd(m.youtubeService, msg.song)
-
 	case streamURLFetchedMsg:
 		err := m.playerService.Play(msg.url)
 		if err != nil {
 			return m, func() tea.Msg { return playErrorMsg{err} }
 		}
 		return m, func() tea.Msg { return songNowPlayingMsg{song: msg.song} }
-
 	case songNowPlayingMsg:
-		m.playerStatus = "Reproduciendo"
-		m.currentlyPlaying = msg.song
+		m.player.SetContent("Reproduciendo", msg.song, nil)
 		return m, nil
-
 	case playErrorMsg:
-		m.playerStatus = "Error"
-		m.playerError = msg.err
+		m.player.SetContent("Error", domain.Song{}, msg.err)
 		return m, nil
 	}
 
-	switch m.state {
-	case globalView:
-		if keyMsg, ok := msg.(tea.KeyMsg); ok {
-			return m.updateGlobal(keyMsg)
-		}
-	case searchView:
-		if keyMsg, ok := msg.(tea.KeyMsg); ok && keyMsg.Type == tea.KeyEsc {
-			m.state = globalView
-			return m, nil
-		}
-		var cmd tea.Cmd
-		m.search, cmd = m.search.Update(msg)
-		return m, cmd
-	case historyView:
-		if keyMsg, ok := msg.(tea.KeyMsg); ok && keyMsg.Type == tea.KeyEsc {
-			m.state = globalView
-			return m, nil
-		}
-	}
+	m.search, cmd = m.search.Update(msg)
+	cmds = append(cmds, cmd)
+	m.player, cmd = m.player.Update(msg)
+	cmds = append(cmds, cmd)
 
-	return m, nil
-}
-
-func (m *AppModel) updateGlobal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "q", "esc":
-		return m, tea.Quit
-	case "s":
-		m.state = searchView
-		return m, m.search.textInput.Focus()
-	case "h":
-		m.state = historyView
-		return m, nil
-	}
-	return m, nil
+	return m, tea.Batch(cmds...)
 }
 
 func (m AppModel) View() string {
-	if m.width == 0 {
-		return "Inicializando..."
+	if m.width < MIN_WIDTH || m.height < MIN_HEIGHT {
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, "Terminal demasiado pequeña")
 	}
 
-	mainContentHeight := m.height - m.styles.TopBar.GetHeight() - m.styles.PlayerBar.GetHeight()
+	availableWidth := m.width - m.styles.App.GetHorizontalFrameSize()
 
-	topBar := m.renderTopBar()
-	mainContent := m.renderMainContent(mainContentHeight)
-	playerBar := m.renderPlayerBar()
+	playerHeight := 3
+	helpHeight := 1
 
-	return lipgloss.JoinVertical(lipgloss.Left,
-		topBar,
-		mainContent,
-		playerBar,
-	)
-}
+	mainHeight := m.height - playerHeight - helpHeight - m.styles.App.GetVerticalFrameSize()
 
-func (m AppModel) renderTopBar() string {
-	stateStr := "Global"
-	switch m.state {
-	case searchView:
-		stateStr = "Search"
-	case historyView:
-		stateStr = "History"
-	}
-	title := fmt.Sprintf("yogo | Current Mode: %s", stateStr)
-	return m.styles.TopBar.Render(title)
-}
+	mainInnerWidth := availableWidth - 2
+	playerInnerWidth := availableWidth - 2
 
-func (m AppModel) renderMainContent(height int) string {
-	var content string
+	mainInnerHeight := mainHeight - 2
+	playerInnerHeight := playerHeight - 2
 
-	switch m.state {
-	case searchView:
-		content = m.search.View()
-	default:
-		helpText := "Navegación: [s]earch | [h]istory | [q]uit"
-		content = lipgloss.Place(
-			m.width-2, height-2,
-			lipgloss.Center, lipgloss.Center,
-			helpText,
-		)
-	}
+	m.search.SetSize(mainInnerWidth, mainInnerHeight)
+	m.player.SetSize(playerInnerWidth, playerInnerHeight)
 
-	mainStyle := m.styles.MainContent.
-		Width(m.width - 2).
-		Height(height - 2)
+	searchContent := m.search.View()
 
-	return mainStyle.Render(content)
-}
+	searchBoxStyle := m.styles.Box
 
-func (m AppModel) renderPlayerBar() string {
-	var status string
-	switch m.playerStatus {
-	case "Idle":
-		status = "Player: [Idle]"
-	case "Reproduciendo":
-		status = fmt.Sprintf("▶ %s - %s", m.currentlyPlaying.Title, m.currentlyPlaying.Artists[0])
-	case "Error":
-		status = fmt.Sprintf("Error: %v", m.playerError)
-	default:
-		status = m.playerStatus
-	}
-	return m.styles.PlayerBar.Render(status)
-}
+	mainPanel := searchBoxStyle.Width(availableWidth).Height(mainHeight).Render(searchContent)
 
-type Styles struct {
-	TopBar      lipgloss.Style
-	MainContent lipgloss.Style
-	PlayerBar   lipgloss.Style
-}
+	playerContent := m.player.View()
+	playerPanel := m.styles.Box.Width(availableWidth).Height(playerHeight).Render(playerContent)
 
-func DefaultStyles() Styles {
-	return Styles{
-		TopBar: lipgloss.NewStyle().
-			Background(lipgloss.Color("62")).
-			Foreground(lipgloss.Color("230")).
-			Padding(0, 1),
-		MainContent: lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("240")),
-		PlayerBar: lipgloss.NewStyle().
-			Background(lipgloss.Color("235")).
-			Foreground(lipgloss.Color("250")).
-			Padding(0, 1),
-	}
+	helpView := m.styles.Help.Width(availableWidth).Render("Ayuda: [↑/↓/Tab] navegar | [Enter] seleccionar | [q] salir")
+
+	return m.styles.App.Render(lipgloss.JoinVertical(lipgloss.Top,
+		mainPanel,
+		playerPanel,
+		helpView,
+	))
 }
