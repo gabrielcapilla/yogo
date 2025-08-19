@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 
+	"yogo/internal/domain"
 	"yogo/internal/ports"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -23,20 +24,37 @@ type AppModel struct {
 	height         int
 	styles         Styles
 	youtubeService ports.YoutubeService
+	playerService  ports.PlayerService
 	search         SearchModel
+
+	playerStatus     string
+	currentlyPlaying domain.Song
+	playerError      error
 }
 
-func InitialModel(service ports.YoutubeService) AppModel {
+func InitialModel(ytService ports.YoutubeService, pService ports.PlayerService) AppModel {
 	return AppModel{
 		state:          globalView,
 		styles:         DefaultStyles(),
-		youtubeService: service,
-		search:         NewSearchModel(service),
+		youtubeService: ytService,
+		playerService:  pService,
+		search:         NewSearchModel(ytService),
+		playerStatus:   "Idle",
 	}
 }
 
 func (m AppModel) Init() tea.Cmd {
 	return m.search.Init()
+}
+
+func getStreamURLCmd(service ports.YoutubeService, song domain.Song) tea.Cmd {
+	return func() tea.Msg {
+		url, err := service.GetStreamURL(song.ID)
+		if err != nil {
+			return playErrorMsg{err}
+		}
+		return streamURLFetchedMsg{song: song, url: url}
+	}
 }
 
 func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -51,6 +69,28 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Type == tea.KeyCtrlC {
 			return m, tea.Quit
 		}
+	case playSongMsg:
+		m.playerStatus = fmt.Sprintf("Cargando: %s...", msg.song.Title)
+		m.currentlyPlaying = msg.song
+		m.playerError = nil
+		return m, getStreamURLCmd(m.youtubeService, msg.song)
+
+	case streamURLFetchedMsg:
+		err := m.playerService.Play(msg.url)
+		if err != nil {
+			return m, func() tea.Msg { return playErrorMsg{err} }
+		}
+		return m, func() tea.Msg { return songNowPlayingMsg{song: msg.song} }
+
+	case songNowPlayingMsg:
+		m.playerStatus = "Reproduciendo"
+		m.currentlyPlaying = msg.song
+		return m, nil
+
+	case playErrorMsg:
+		m.playerStatus = "Error"
+		m.playerError = msg.err
+		return m, nil
 	}
 
 	switch m.state {
@@ -143,7 +183,18 @@ func (m AppModel) renderMainContent(height int) string {
 }
 
 func (m AppModel) renderPlayerBar() string {
-	return m.styles.PlayerBar.Render("Player: [Idle]")
+	var status string
+	switch m.playerStatus {
+	case "Idle":
+		status = "Player: [Idle]"
+	case "Reproduciendo":
+		status = fmt.Sprintf("▶ %s - %s", m.currentlyPlaying.Title, m.currentlyPlaying.Artists[0])
+	case "Error":
+		status = fmt.Sprintf("Error: %v", m.playerError)
+	default:
+		status = m.playerStatus
+	}
+	return m.styles.PlayerBar.Render(status)
 }
 
 type Styles struct {

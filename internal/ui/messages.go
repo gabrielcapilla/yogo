@@ -11,3 +11,20 @@ type searchResultsMsg struct {
 type searchErrorMsg struct {
 	err error
 }
+
+type playSongMsg struct {
+	song domain.Song
+}
+
+type streamURLFetchedMsg struct {
+	song domain.Song
+	url  string
+}
+
+type songNowPlayingMsg struct {
+	song domain.Song
+}
+
+type playErrorMsg struct {
+	err error
+}

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"io"
 
 	"yogo/internal/domain"
 	"yogo/internal/ports"
@@ -12,18 +13,39 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+var (
+	itemStyle         = lipgloss.NewStyle().PaddingLeft(4)
+	selectedItemStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(lipgloss.Color("170"))
+	titleStyle        = lipgloss.NewStyle().MarginLeft(2)
+)
+
 type searchItem struct {
 	song domain.Song
 }
 
 func (i searchItem) FilterValue() string { return i.song.Title }
 
-func (i searchItem) Title() string { return i.song.Title }
-func (i searchItem) Description() string {
-	if len(i.song.Artists) > 0 {
-		return fmt.Sprintf("Por: %s", i.song.Artists[0])
+type itemDelegate struct{}
+
+func (d itemDelegate) Height() int                               { return 1 }
+func (d itemDelegate) Spacing() int                              { return 0 }
+func (d itemDelegate) Update(msg tea.Msg, m *list.Model) tea.Cmd { return nil }
+func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
+	i, ok := listItem.(searchItem)
+	if !ok {
+		return
 	}
-	return "Artista desconocido"
+
+	str := fmt.Sprintf("%d. %s", index+1, i.song.Title)
+
+	fn := itemStyle.Render
+	if index == m.Index() {
+		fn = func(s ...string) string {
+			return selectedItemStyle.Render("> " + lipgloss.JoinHorizontal(lipgloss.Left, s...))
+		}
+	}
+
+	fmt.Fprint(w, fn(str))
 }
 
 type SearchModel struct {
@@ -42,8 +64,9 @@ func NewSearchModel(service ports.YoutubeService) SearchModel {
 	ti.CharLimit = 156
 	ti.Width = 50
 
-	li := list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
+	li := list.New([]list.Item{}, itemDelegate{}, 0, 0)
 	li.Title = "Resultados de la Búsqueda"
+	li.Styles.Title = titleStyle
 	li.SetShowStatusBar(false)
 	li.SetFilteringEnabled(false)
 
@@ -111,7 +134,12 @@ func (m SearchModel) Update(msg tea.Msg) (SearchModel, tea.Cmd) {
 			case "tab":
 				m.textInput.Focus()
 			case "enter":
-				return m, nil
+				selectedItem, ok := m.resultsList.SelectedItem().(searchItem)
+				if ok {
+					return m, func() tea.Msg {
+						return playSongMsg{song: selectedItem.song}
+					}
+				}
 			default:
 				m.resultsList, cmd = m.resultsList.Update(msg)
 				cmds = append(cmds, cmd)

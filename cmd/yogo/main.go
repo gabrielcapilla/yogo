@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 
+	_ "yogo/internal/logger"
+	"yogo/internal/services/player"
 	"yogo/internal/services/youtube"
 	"yogo/internal/ui"
 
@@ -11,9 +13,12 @@ import (
 )
 
 func main() {
-	youtubeService := youtube.NewYTDLPClient()
+	mpvSocketPath := "/tmp/mpvsocket"
 
-	initialModel := ui.InitialModel(youtubeService)
+	youtubeService := youtube.NewYTDLPClient()
+	playerService := player.NewMpvPlayer(mpvSocketPath)
+
+	initialModel := ui.InitialModel(youtubeService, playerService)
 
 	p := tea.NewProgram(initialModel, tea.WithAltScreen())
 
