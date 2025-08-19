@@ -21,8 +21,17 @@ const (
 	historyView
 )
 
+type focusState int
+
+const (
+	globalFocus focusState = iota
+	searchFocus
+	historyFocus
+)
+
 type AppModel struct {
-	state          viewState
+	currentView    viewState
+	focus          focusState
 	width, height  int
 	youtubeService ports.YoutubeService
 	playerService  ports.PlayerService
@@ -36,7 +45,8 @@ type AppModel struct {
 func InitialModel(ytService ports.YoutubeService, pService ports.PlayerService, sService ports.StorageService) AppModel {
 	styles := DefaultStyles()
 	return AppModel{
-		state:          searchView,
+		currentView:    searchView,
+		focus:          globalFocus,
 		youtubeService: ytService,
 		playerService:  pService,
 		storageService: sService,
@@ -88,47 +98,58 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	var cmds []tea.Cmd
 
-	switch m.state {
-	case searchView:
-		m.search, cmd = m.search.Update(msg)
-		cmds = append(cmds, cmd)
-	case historyView:
-		m.history, cmd = m.history.Update(msg)
-		cmds = append(cmds, cmd)
-	}
-
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-	case tea.KeyMsg:
-		switch msg.String() {
-		case " ":
-			if m.player.status == "Playing" {
-				m.playerService.Pause()
-			}
-		case "left":
-			if m.player.status == "Playing" {
-				m.playerService.Seek(-5)
-			}
-		case "right":
-			if m.player.status == "Playing" {
-				m.playerService.Seek(5)
-			}
+	case changeFocusMsg:
+		m.focus = msg.newFocus
+		if m.focus == searchFocus {
+			m.search.Focus()
+		} else {
+			m.search.Blur()
 		}
-		switch msg.String() {
-		case "ctrl+c", "q":
-			return m, tea.Quit
-		case "s":
-			if m.state != searchView {
-				m.state = searchView
-			}
-		case "h":
-			if m.state != historyView {
-				m.state = historyView
+		return m, nil
+	}
+
+	switch m.focus {
+	case searchFocus:
+		m.search, cmd = m.search.Update(msg)
+		cmds = append(cmds, cmd)
+	case historyFocus:
+		m.history, cmd = m.history.Update(msg)
+		cmds = append(cmds, cmd)
+	case globalFocus:
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			switch msg.String() {
+			case "ctrl+c", "q":
+				return m, tea.Quit
+			case "s":
+				m.currentView = searchView
+				m.focus = searchFocus
+				m.search.Focus()
+			case "h":
+				m.currentView = historyView
+				m.focus = historyFocus
 				cmds = append(cmds, loadHistoryCmd(m.storageService))
+			case " ":
+				if m.player.status == "Playing" || m.player.status == "Paused" {
+					m.playerService.Pause()
+				}
+			case "left":
+				if m.player.status == "Playing" || m.player.status == "Paused" {
+					m.playerService.Seek(-5)
+				}
+			case "right":
+				if m.player.status == "Playing" || m.player.status == "Paused" {
+					m.playerService.Seek(5)
+				}
 			}
 		}
+	}
+
+	switch msg := msg.(type) {
 	case playSongMsg:
 		m.player.SetContent("Loading", msg.song, nil)
 		go m.storageService.AddToHistory(domain.HistoryEntry{Song: msg.song, PlayedAt: time.Now()})
@@ -149,6 +170,15 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, cmd)
 		cmds = append(cmds, m.tickCmd())
 	case HistoryLoadedMsg, HistoryErrorMsg:
+		if m.currentView == historyView {
+			m.history, cmd = m.history.Update(msg)
+			cmds = append(cmds, cmd)
+		}
+	case searchResultsMsg, searchErrorMsg:
+		if m.currentView == searchView {
+			m.search, cmd = m.search.Update(msg)
+			cmds = append(cmds, cmd)
+		}
 	}
 
 	m.player, cmd = m.player.Update(msg)
@@ -172,7 +202,7 @@ func (m AppModel) View() string {
 	playerInnerHeight := playerHeight - 2
 
 	var mainContent string
-	switch m.state {
+	switch m.currentView {
 	case searchView:
 		m.search.SetSize(mainInnerWidth, mainInnerHeight)
 		mainContent = m.search.View()

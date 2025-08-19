@@ -41,3 +41,7 @@ type HistoryErrorMsg struct {
 type playerStateUpdateMsg struct {
 	state ports.PlayerState
 }
+
+type changeFocusMsg struct {
+	newFocus focusState
+}

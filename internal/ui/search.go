@@ -37,8 +37,16 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	fmt.Fprint(w, style.Render(pointer+line))
 }
 
+type searchComponentFocus int
+
+const (
+	inputFocus searchComponentFocus = iota
+	listFocus
+)
+
 type SearchModel struct {
 	width, height  int
+	focus          searchComponentFocus
 	youtubeService ports.YoutubeService
 	textInput      textinput.Model
 	resultsList    list.Model
@@ -51,7 +59,6 @@ type SearchModel struct {
 func NewSearchModel(service ports.YoutubeService, styles Styles) SearchModel {
 	ti := textinput.New()
 	ti.Placeholder = "Search for a song..."
-	ti.Focus()
 	ti.Prompt = "> "
 	ti.PromptStyle = styles.SearchPrompt
 
@@ -65,10 +72,26 @@ func NewSearchModel(service ports.YoutubeService, styles Styles) SearchModel {
 	s.Spinner = spinner.Dot
 	s.Style = styles.Spinner
 
-	return SearchModel{youtubeService: service, textInput: ti, resultsList: li, spinner: s, styles: styles}
+	return SearchModel{
+		focus:          inputFocus,
+		youtubeService: service,
+		textInput:      ti,
+		resultsList:    li,
+		spinner:        s,
+		styles:         styles,
+	}
 }
 
-func (m *SearchModel) Init() tea.Cmd { return tea.Batch(textinput.Blink, m.spinner.Tick) }
+func (m *SearchModel) Init() tea.Cmd { return m.spinner.Tick }
+
+func (m *SearchModel) Focus() {
+	m.focus = inputFocus
+	m.textInput.Focus()
+}
+
+func (m *SearchModel) Blur() {
+	m.textInput.Blur()
+}
 
 func (m *SearchModel) SetSize(w, h int) {
 	m.width = w
@@ -85,7 +108,7 @@ func (m *SearchModel) performSearch() tea.Msg {
 	return searchResultsMsg{songs}
 }
 
-func (m *SearchModel) Update(msg tea.Msg) (SearchModel, tea.Cmd) {
+func (m SearchModel) Update(msg tea.Msg) (SearchModel, tea.Cmd) {
 	var cmd tea.Cmd
 	var cmds []tea.Cmd
 
@@ -97,44 +120,70 @@ func (m *SearchModel) Update(msg tea.Msg) (SearchModel, tea.Cmd) {
 			items[i] = searchItem{song: song}
 		}
 		m.resultsList.SetItems(items)
-		return *m, nil
+		return m, nil
 	case searchErrorMsg:
 		m.isLoading = false
 		m.err = msg.err
-		return *m, nil
+		return m, nil
 	case tea.KeyMsg:
-		if m.textInput.Focused() {
-			switch msg.String() {
-			case "tab", "shift+tab", "down", "up":
+		switch msg.String() {
+		case "esc":
+			return m, func() tea.Msg { return changeFocusMsg{newFocus: globalFocus} }
+		case "tab":
+			if m.focus == inputFocus {
+				m.focus = listFocus
 				m.textInput.Blur()
+			} else {
+				m.focus = inputFocus
+				m.textInput.Focus()
+			}
+			return m, nil
+		}
+	}
+
+	switch m.focus {
+	case inputFocus:
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			switch msg.String() {
 			case "enter":
 				m.isLoading = true
 				m.err = nil
+				m.focus = listFocus
 				m.textInput.Blur()
-				return *m, m.performSearch
+				cmds = append(cmds, m.performSearch)
+			default:
+				m.textInput, cmd = m.textInput.Update(msg)
+				cmds = append(cmds, cmd)
 			}
+		default:
+			m.textInput, cmd = m.textInput.Update(msg)
+			cmds = append(cmds, cmd)
+		}
+	case listFocus:
+		if m.isLoading {
+			m.spinner, cmd = m.spinner.Update(msg)
+			cmds = append(cmds, cmd)
 		} else {
-			switch msg.String() {
-			case "tab", "shift+tab":
-				m.textInput.Focus()
-			case "enter":
-				if selectedItem, ok := m.resultsList.SelectedItem().(searchItem); ok {
-					return *m, func() tea.Msg { return playSongMsg(selectedItem) }
+			switch msg := msg.(type) {
+			case tea.KeyMsg:
+				switch msg.String() {
+				case "enter":
+					if selectedItem, ok := m.resultsList.SelectedItem().(searchItem); ok {
+						cmds = append(cmds, func() tea.Msg { return playSongMsg(selectedItem) })
+					}
+				default:
+					m.resultsList, cmd = m.resultsList.Update(msg)
+					cmds = append(cmds, cmd)
 				}
+			default:
+				m.resultsList, cmd = m.resultsList.Update(msg)
+				cmds = append(cmds, cmd)
 			}
 		}
 	}
 
-	if m.isLoading {
-		m.spinner, cmd = m.spinner.Update(msg)
-	} else if m.textInput.Focused() {
-		m.textInput, cmd = m.textInput.Update(msg)
-	} else {
-		m.resultsList, cmd = m.resultsList.Update(msg)
-	}
-	cmds = append(cmds, cmd)
-
-	return *m, tea.Batch(cmds...)
+	return m, tea.Batch(cmds...)
 }
 
 func (m SearchModel) View() string {

@@ -96,7 +96,10 @@ func (m HistoryModel) Update(msg tea.Msg) (HistoryModel, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
-		if msg.String() == "enter" {
+		switch msg.String() {
+		case "esc":
+			return m, func() tea.Msg { return changeFocusMsg{newFocus: globalFocus} }
+		case "enter":
 			if selectedItem, ok := m.resultsList.SelectedItem().(historyItem); ok {
 				return m, func() tea.Msg {
 					return playSongMsg{song: selectedItem.entry.Song}
