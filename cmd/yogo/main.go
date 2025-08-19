@@ -4,13 +4,16 @@ import (
 	"fmt"
 	"os"
 
+	"yogo/internal/services/youtube"
 	"yogo/internal/ui"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 func main() {
-	initialModel := ui.InitialModel()
+	youtubeService := youtube.NewYTDLPClient()
+
+	initialModel := ui.InitialModel(youtubeService)
 
 	p := tea.NewProgram(initialModel, tea.WithAltScreen())
 
