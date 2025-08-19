@@ -14,12 +14,28 @@ import (
 
 var execCommand = exec.Command
 
-type ytdlpResponse struct {
+type ytdlpSearchResponse struct {
 	Entries []struct {
 		ID       string `json:"id"`
 		Title    string `json:"title"`
 		Uploader string `json:"uploader"`
 		Channel  string `json:"channel"`
+	} `json:"entries"`
+}
+
+type ytdlpGenericSearchResponse struct {
+	Entries []struct {
+		Type  string `json:"_type"`
+		ID    string `json:"id"`
+		Title string `json:"title"`
+	} `json:"entries"`
+}
+
+type ytdlpPlaylistResponse struct {
+	Entries []struct {
+		ID       string `json:"id"`
+		Title    string `json:"title"`
+		Uploader string `json:"uploader"`
 	} `json:"entries"`
 }
 
@@ -69,13 +85,13 @@ func (c *YTDLPClient) Search(query string) ([]domain.Song, error) {
 		return nil, fmt.Errorf("yt-dlp search error: %w (details in log)", err)
 	}
 
-	var resp ytdlpResponse
+	var resp ytdlpSearchResponse
 	if err := json.Unmarshal(output, &resp); err != nil {
 		logger.Log.Error().Err(err).Str("json_output", string(output)).Msg("Error parsing yt-dlp JSON")
 		return nil, fmt.Errorf("error parsing yt-dlp JSON: %w", err)
 	}
 
-	var songs []domain.Song
+	songs := make([]domain.Song, 0)
 	for _, entry := range resp.Entries {
 		artist := entry.Uploader
 		if artist == "" {
@@ -108,4 +124,59 @@ func (c *YTDLPClient) GetStreamURL(songID string) (string, error) {
 	firstURL := strings.Split(url, "\n")[0]
 	logger.Log.Info().Str("song_id", songID).Msg("Successfully obtained stream URL")
 	return firstURL, nil
+}
+
+func (c *YTDLPClient) SearchPlaylists(query string) ([]domain.Playlist, error) {
+	searchQuery := fmt.Sprintf("ytsearch10:%s", query)
+	logger.Log.Info().Str("query", searchQuery).Msg("Executing yt-dlp playlist search")
+
+	output, err := c.executeYTDLP("--dump-single-json", "--", searchQuery)
+	if err != nil {
+		return nil, fmt.Errorf("yt-dlp playlist search error: %w", err)
+	}
+
+	var resp ytdlpGenericSearchResponse
+	if err := json.Unmarshal(output, &resp); err != nil {
+		logger.Log.Error().Err(err).Str("json_output", string(output)).Msg("Error parsing yt-dlp JSON for playlists")
+		return nil, fmt.Errorf("error parsing yt-dlp JSON for playlists: %w", err)
+	}
+
+	playlists := make([]domain.Playlist, 0)
+	for _, entry := range resp.Entries {
+		if entry.Type == "playlist" {
+			playlists = append(playlists, domain.Playlist{
+				ID:    entry.ID,
+				Title: entry.Title,
+			})
+		}
+	}
+	logger.Log.Info().Int("playlist_count", len(playlists)).Msg("Playlist search successful")
+	return playlists, nil
+}
+
+func (c *YTDLPClient) GetPlaylistSongs(playlistID string) ([]domain.Song, error) {
+	logger.Log.Info().Str("playlist_id", playlistID).Msg("Getting playlist songs")
+	playlistURL := fmt.Sprintf("https://www.youtube.com/playlist?list=%s", playlistID)
+
+	output, err := c.executeYTDLP("--flat-playlist", "--dump-single-json", "--", playlistURL)
+	if err != nil {
+		return nil, fmt.Errorf("yt-dlp get-playlist-songs error: %w", err)
+	}
+
+	var resp ytdlpPlaylistResponse
+	if err := json.Unmarshal(output, &resp); err != nil {
+		logger.Log.Error().Err(err).Str("json_output", string(output)).Msg("Error parsing yt-dlp playlist songs JSON")
+		return nil, fmt.Errorf("error parsing yt-dlp playlist songs JSON: %w", err)
+	}
+
+	songs := make([]domain.Song, 0)
+	for _, entry := range resp.Entries {
+		songs = append(songs, domain.Song{
+			ID:      entry.ID,
+			Title:   entry.Title,
+			Artists: []string{entry.Uploader},
+		})
+	}
+	logger.Log.Info().Int("song_count", len(songs)).Str("playlist_id", playlistID).Msg("Successfully fetched playlist songs")
+	return songs, nil
 }

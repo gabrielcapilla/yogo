@@ -137,3 +137,90 @@ func TestYTDLPClient_GetStreamURL(t *testing.T) {
 		})
 	}
 }
+
+func TestYTDLPClient_SearchPlaylists(t *testing.T) {
+	testCases := []struct {
+		name              string
+		mockStdout        string
+		expectErr         bool
+		expectedPlaylists []domain.Playlist
+	}{
+		{
+			name: "Successful playlist search",
+			mockStdout: `{
+				"entries": [
+					{"_type": "video", "id": "id1", "title": "A Video"},
+					{"_type": "playlist", "id": "pl1", "title": "Playlist One"},
+					{"_type": "playlist", "id": "pl2", "title": "Playlist Two"}
+				]
+			}`,
+			expectErr: false,
+			expectedPlaylists: []domain.Playlist{
+				{ID: "pl1", Title: "Playlist One"},
+				{ID: "pl2", Title: "Playlist Two"},
+			},
+		},
+		{
+			name:              "Search with no playlist results",
+			mockStdout:        `{"entries": [{"_type": "video", "id": "id1", "title": "A Video"}]}`,
+			expectErr:         false,
+			expectedPlaylists: []domain.Playlist{},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockExecCommand(t, tc.mockStdout, "")
+			client := NewYTDLPClient("")
+
+			playlists, err := client.SearchPlaylists("test query")
+
+			if tc.expectErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, tc.expectedPlaylists, playlists)
+			}
+		})
+	}
+}
+
+func TestYTDLPClient_GetPlaylistSongs(t *testing.T) {
+	testCases := []struct {
+		name          string
+		mockStdout    string
+		expectErr     bool
+		expectedSongs []domain.Song
+	}{
+		{
+			name: "Successful fetch of playlist songs",
+			mockStdout: `{
+				"entries": [
+					{"id": "song1", "title": "First Song", "uploader": "Artist X"},
+					{"id": "song2", "title": "Second Song", "uploader": "Artist Y"}
+				]
+			}`,
+			expectErr: false,
+			expectedSongs: []domain.Song{
+				{ID: "song1", Title: "First Song", Artists: []string{"Artist X"}},
+				{ID: "song2", Title: "Second Song", Artists: []string{"Artist Y"}},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockExecCommand(t, tc.mockStdout, "")
+			client := NewYTDLPClient("")
+
+			songs, err := client.GetPlaylistSongs("playlist_id")
+
+			if tc.expectErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, tc.expectedSongs, songs)
+			}
+		})
+	}
+}
