@@ -137,7 +137,7 @@ func (m SearchModel) Update(msg tea.Msg) (SearchModel, tea.Cmd) {
 				selectedItem, ok := m.resultsList.SelectedItem().(searchItem)
 				if ok {
 					return m, func() tea.Msg {
-						return playSongMsg{song: selectedItem.song}
+						return playSongMsg(selectedItem)
 					}
 				}
 			default:
