@@ -62,7 +62,7 @@ func (c *YTDLPClient) Search(query string) ([]domain.Song, error) {
 	searchQuery := fmt.Sprintf("ytsearch5:%s", query)
 	logger.Log.Printf("Executing yt-dlp search with query: '%s'", searchQuery)
 
-	output, err := c.executeYTDLP("--dump-single-json", searchQuery)
+	output, err := c.executeYTDLP("--dump-single-json", "--", searchQuery)
 	if err != nil {
 		return nil, fmt.Errorf("yt-dlp search error: %w (details in log)", err)
 	}
@@ -93,7 +93,7 @@ func (c *YTDLPClient) GetStreamURL(songID string) (string, error) {
 	logger.Log.Printf("Getting stream URL for ID: %s", songID)
 
 	formatSelector := "bestaudio/best"
-	output, err := c.executeYTDLP("-f", formatSelector, "-g", songID)
+	output, err := c.executeYTDLP("-f", formatSelector, "-g", "--", songID)
 	if err != nil {
 		return "", fmt.Errorf("yt-dlp get-url error: %w (details in log)", err)
 	}
