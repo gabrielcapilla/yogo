@@ -13,6 +13,8 @@ import (
 	"yogo/internal/services/youtube"
 	"yogo/internal/ui"
 
+	"github.com/gofrs/flock"
+
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -30,6 +32,32 @@ func main() {
 
 	logger.Setup(*debugFlag)
 
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Critical error: could not find user config directory: %v\n", err)
+		os.Exit(1)
+	}
+	yogoDir := filepath.Join(configDir, "yogo")
+	// Ensure the directory exists before creating the lock file.
+	if err := os.MkdirAll(yogoDir, 0755); err != nil {
+		fmt.Fprintf(os.Stderr, "Critical error: could not create config directory: %v\n", err)
+		os.Exit(1)
+	}
+
+	lockPath := filepath.Join(yogoDir, "yogo.lock")
+	fileLock := flock.New(lockPath)
+	locked, err := fileLock.TryLock()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Critical error: could not acquire file lock: %v\n", err)
+		os.Exit(1)
+	}
+
+	if !locked {
+		fmt.Fprintln(os.Stderr, "Error: Another instance of yogo is already running.")
+		os.Exit(1)
+	}
+	defer fileLock.Unlock()
+
 	configService := config.NewViperConfigService()
 	cfg, err := configService.Load()
 	if err != nil {
@@ -38,13 +66,6 @@ func main() {
 	}
 
 	mpvSocketPath := "/tmp/yogo-mpvsocket"
-
-	configDir, err := os.UserConfigDir()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Critical error: could not find config directory: %v\n", err)
-		os.Exit(1)
-	}
-	yogoDir := filepath.Join(configDir, "yogo")
 	dbPath := filepath.Join(yogoDir, "yogo.db")
 
 	youtubeService := youtube.NewYTDLPClient(cfg.CookiesPath)

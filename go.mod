@@ -6,6 +6,7 @@ require (
 	github.com/charmbracelet/bubbles v0.18.0
 	github.com/charmbracelet/bubbletea v0.26.4
 	github.com/charmbracelet/lipgloss v0.11.0
+	github.com/gofrs/flock v0.8.1
 	github.com/rs/zerolog v1.33.0
 	github.com/spf13/viper v1.20.1
 	github.com/stretchr/testify v1.10.0
