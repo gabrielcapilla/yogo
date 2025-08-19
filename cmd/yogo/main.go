@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"yogo/internal/logger"
+	"yogo/internal/services/config"
 	"yogo/internal/services/player"
 	"yogo/internal/services/storage"
 	"yogo/internal/services/youtube"
@@ -29,6 +30,13 @@ func main() {
 
 	logger.Setup(*debugFlag)
 
+	configService := config.NewViperConfigService()
+	cfg, err := configService.Load()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Critical error: could not load config: %v\n", err)
+		os.Exit(1)
+	}
+
 	mpvSocketPath := "/tmp/yogo-mpvsocket"
 
 	configDir, err := os.UserConfigDir()
@@ -39,9 +47,7 @@ func main() {
 	yogoDir := filepath.Join(configDir, "yogo")
 	dbPath := filepath.Join(yogoDir, "yogo.db")
 
-	cookiesPath := os.Getenv("YOGO_COOKIES_PATH")
-
-	youtubeService := youtube.NewYTDLPClient(cookiesPath)
+	youtubeService := youtube.NewYTDLPClient(cfg.CookiesPath)
 	playerService := player.NewMpvPlayer(mpvSocketPath)
 	storageService, err := storage.NewBboltStore(dbPath)
 	if err != nil {
@@ -51,7 +57,7 @@ func main() {
 	defer storageService.Close()
 	defer playerService.Close()
 
-	initialModel := ui.InitialModel(youtubeService, playerService, storageService)
+	initialModel := ui.InitialModel(youtubeService, playerService, storageService, cfg)
 
 	p := tea.NewProgram(initialModel, tea.WithAltScreen())
 

@@ -19,7 +19,8 @@ type BboltStore struct {
 }
 
 func NewBboltStore(dbPath string) (ports.StorageService, error) {
-	db, err := bbolt.Open(dbPath, 0600, nil)
+	options := &bbolt.Options{Timeout: 1 * time.Second}
+	db, err := bbolt.Open(dbPath, 0600, options)
 	if err != nil {
 		return nil, fmt.Errorf("could not open bbolt database: %w", err)
 	}

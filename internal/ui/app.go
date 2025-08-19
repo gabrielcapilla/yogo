@@ -36,13 +36,14 @@ type AppModel struct {
 	youtubeService ports.YoutubeService
 	playerService  ports.PlayerService
 	storageService ports.StorageService
+	config         domain.Config
 	search         SearchModel
 	history        HistoryModel
 	player         PlayerModel
 	styles         Styles
 }
 
-func InitialModel(ytService ports.YoutubeService, pService ports.PlayerService, sService ports.StorageService) AppModel {
+func InitialModel(ytService ports.YoutubeService, pService ports.PlayerService, sService ports.StorageService, cfg domain.Config) AppModel {
 	styles := DefaultStyles()
 	return AppModel{
 		currentView:    searchView,
@@ -50,6 +51,7 @@ func InitialModel(ytService ports.YoutubeService, pService ports.PlayerService, 
 		youtubeService: ytService,
 		playerService:  pService,
 		storageService: sService,
+		config:         cfg,
 		search:         NewSearchModel(ytService, styles),
 		history:        NewHistoryModel(sService, styles),
 		player:         NewPlayerModel(styles),
@@ -84,9 +86,9 @@ func getStreamURLCmd(service ports.YoutubeService, song domain.Song) tea.Cmd {
 	}
 }
 
-func loadHistoryCmd(service ports.StorageService) tea.Cmd {
+func (m AppModel) loadHistoryCmd() tea.Cmd {
 	return func() tea.Msg {
-		entries, err := service.GetHistory(50)
+		entries, err := m.storageService.GetHistory(m.config.HistoryLimit)
 		if err != nil {
 			return HistoryErrorMsg{Err: err}
 		}
@@ -132,7 +134,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "h":
 				m.currentView = historyView
 				m.focus = historyFocus
-				cmds = append(cmds, loadHistoryCmd(m.storageService))
+				cmds = append(cmds, m.loadHistoryCmd())
 			case " ":
 				if m.player.status == "Playing" || m.player.status == "Paused" {
 					m.playerService.Pause()
