@@ -21,9 +21,9 @@ func init() {
 
 	file, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
 	if err != nil {
-		panic(fmt.Sprintf("No se pudo abrir el archivo de log: %v", err))
+		panic(fmt.Sprintf("Could not open log file: %v", err))
 	}
 
 	Log = log.New(file, "YOGO: ", log.LstdFlags|log.Lshortfile)
-	Log.Println("Logger inicializado. Escribiendo en:", logPath)
+	Log.Println("Logger initialized. Writing to:", logPath)
 }

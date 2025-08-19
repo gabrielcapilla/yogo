@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	MIN_WIDTH  = 82
+	MIN_WIDTH  = 84
 	MIN_HEIGHT = 14
 )
 
@@ -47,8 +47,21 @@ func InitialModel(ytService ports.YoutubeService, pService ports.PlayerService, 
 	}
 }
 
+func (m AppModel) tickCmd() tea.Cmd {
+	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
+		if m.player.status == "Playing" {
+			state, err := m.playerService.GetState()
+			if err != nil {
+				return playErrorMsg{err}
+			}
+			return playerStateUpdateMsg{state}
+		}
+		return nil
+	})
+}
+
 func (m AppModel) Init() tea.Cmd {
-	return tea.Batch(m.search.Init(), m.history.Init())
+	return tea.Batch(m.search.Init(), m.history.Init(), m.tickCmd())
 }
 
 func getStreamURLCmd(service ports.YoutubeService, song domain.Song) tea.Cmd {
@@ -90,6 +103,20 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 	case tea.KeyMsg:
 		switch msg.String() {
+		case " ":
+			if m.player.status == "Playing" {
+				m.playerService.Pause()
+			}
+		case "left":
+			if m.player.status == "Playing" {
+				m.playerService.Seek(-5)
+			}
+		case "right":
+			if m.player.status == "Playing" {
+				m.playerService.Seek(5)
+			}
+		}
+		switch msg.String() {
 		case "ctrl+c", "q":
 			return m, tea.Quit
 		case "s":
@@ -103,7 +130,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case playSongMsg:
-		m.player.SetContent("Cargando", msg.song, nil)
+		m.player.SetContent("Loading", msg.song, nil)
 		go m.storageService.AddToHistory(domain.HistoryEntry{Song: msg.song, PlayedAt: time.Now()})
 		cmds = append(cmds, getStreamURLCmd(m.youtubeService, msg.song))
 	case streamURLFetchedMsg:
@@ -114,9 +141,13 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, func() tea.Msg { return songNowPlayingMsg{song: msg.song} })
 		}
 	case songNowPlayingMsg:
-		m.player.SetContent("Reproduciendo", msg.song, nil)
+		m.player.SetContent("Playing", msg.song, nil)
 	case playErrorMsg:
 		m.player.SetContent("Error", domain.Song{}, msg.err)
+	case playerStateUpdateMsg:
+		m.player, cmd = m.player.Update(msg)
+		cmds = append(cmds, cmd)
+		cmds = append(cmds, m.tickCmd())
 	case HistoryLoadedMsg, HistoryErrorMsg:
 	}
 
@@ -128,7 +159,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m AppModel) View() string {
 	if m.width < MIN_WIDTH || m.height < MIN_HEIGHT {
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, "Terminal demasiado pequeña")
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, "Terminal too small")
 	}
 
 	availableWidth := m.width - m.styles.App.GetHorizontalFrameSize()
@@ -156,7 +187,7 @@ func (m AppModel) View() string {
 	playerContent := m.player.View()
 	playerPanel := m.styles.Box.Width(availableWidth).Height(playerHeight).Render(playerContent)
 
-	helpView := m.styles.Help.Width(availableWidth).Render("Ayuda: [s]earch | [h]istory | [↑/↓] navegar | [Enter] seleccionar | [q] salir")
+	helpView := m.styles.Help.Width(availableWidth).Render("Help: [s]earch | [h]istory | [↑/↓/Tab] navigate | [Enter] select | [q]uit")
 
 	return m.styles.App.Render(lipgloss.JoinVertical(lipgloss.Top,
 		mainPanel,

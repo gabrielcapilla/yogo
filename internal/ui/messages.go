@@ -2,6 +2,7 @@ package ui
 
 import (
 	"yogo/internal/domain"
+	"yogo/internal/ports"
 )
 
 type searchResultsMsg struct {
@@ -35,4 +36,8 @@ type HistoryLoadedMsg struct {
 
 type HistoryErrorMsg struct {
 	Err error
+}
+
+type playerStateUpdateMsg struct {
+	state ports.PlayerState
 }

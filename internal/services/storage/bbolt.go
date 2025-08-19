@@ -19,7 +19,7 @@ type BboltStore struct {
 func NewBboltStore(dbPath string) (ports.StorageService, error) {
 	db, err := bbolt.Open(dbPath, 0600, nil)
 	if err != nil {
-		return nil, fmt.Errorf("no se pudo abrir la base de datos bbolt: %w", err)
+		return nil, fmt.Errorf("could not open bbolt database: %w", err)
 	}
 
 	err = db.Update(func(tx *bbolt.Tx) error {
@@ -27,7 +27,7 @@ func NewBboltStore(dbPath string) (ports.StorageService, error) {
 		return err
 	})
 	if err != nil {
-		return nil, fmt.Errorf("no se pudo crear el bucket de historial: %w", err)
+		return nil, fmt.Errorf("could not create history bucket: %w", err)
 	}
 
 	return &BboltStore{db: db}, nil
@@ -44,7 +44,7 @@ func (s *BboltStore) AddToHistory(entry domain.HistoryEntry) error {
 
 		value, err := json.Marshal(entry)
 		if err != nil {
-			return fmt.Errorf("error al serializar la entrada de historial: %w", err)
+			return fmt.Errorf("error serializing history entry: %w", err)
 		}
 
 		return b.Put(key, value)
@@ -61,7 +61,7 @@ func (s *BboltStore) GetHistory(limit int) ([]domain.HistoryEntry, error) {
 		for k, v := c.Last(); k != nil && len(entries) < limit; k, v = c.Prev() {
 			var entry domain.HistoryEntry
 			if err := json.Unmarshal(v, &entry); err != nil {
-				return fmt.Errorf("error al deserializar entrada de historial: %w", err)
+				return fmt.Errorf("error deserializing history entry: %w", err)
 			}
 			entries = append(entries, entry)
 		}

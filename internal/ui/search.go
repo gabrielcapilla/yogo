@@ -50,7 +50,7 @@ type SearchModel struct {
 
 func NewSearchModel(service ports.YoutubeService, styles Styles) SearchModel {
 	ti := textinput.New()
-	ti.Placeholder = "Busca una canción..."
+	ti.Placeholder = "Search for a song..."
 	ti.Focus()
 	ti.Prompt = "> "
 	ti.PromptStyle = styles.SearchPrompt
@@ -141,7 +141,7 @@ func (m SearchModel) View() string {
 	inputView := m.textInput.View()
 	var resultsView string
 	if m.isLoading {
-		resultsView = m.spinner.View() + " Buscando..."
+		resultsView = m.spinner.View() + " Searching..."
 	} else if m.err != nil {
 		resultsView = m.styles.ErrorText.Render(fmt.Sprintf("Error: %v", m.err))
 	} else {

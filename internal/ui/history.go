@@ -50,7 +50,7 @@ type HistoryModel struct {
 
 func NewHistoryModel(service ports.StorageService, styles Styles) HistoryModel {
 	li := list.New([]list.Item{}, historyDelegate{styles: styles}, 0, 0)
-	li.Title = "Historial de Reproducción"
+	li.Title = "Playback History"
 	li.Styles.Title = styles.BoxTitle
 	li.SetShowStatusBar(false)
 	li.SetShowPagination(false)
@@ -116,7 +116,7 @@ func (m HistoryModel) Update(msg tea.Msg) (HistoryModel, tea.Cmd) {
 
 func (m HistoryModel) View() string {
 	if m.isLoading {
-		return m.spinner.View() + " Cargando historial..."
+		return m.spinner.View() + " Loading history..."
 	}
 	if m.err != nil {
 		return m.styles.ErrorText.Render(fmt.Sprintf("Error: %v", m.err))

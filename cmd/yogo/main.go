@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,12 +15,22 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+var version = "dev"
+
 func main() {
-	mpvSocketPath := "/tmp/mpvsocket"
+	versionFlag := flag.Bool("v", false, "print version and exit")
+	flag.Parse()
+
+	if *versionFlag {
+		fmt.Println(version)
+		os.Exit(0)
+	}
+
+	mpvSocketPath := "/tmp/yogo-mpvsocket"
 
 	configDir, err := os.UserConfigDir()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error crítico: no se pudo encontrar el directorio de configuración: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Critical error: could not find config directory: %v\n", err)
 		os.Exit(1)
 	}
 	yogoDir := filepath.Join(configDir, "yogo")
@@ -31,17 +42,18 @@ func main() {
 	playerService := player.NewMpvPlayer(mpvSocketPath)
 	storageService, err := storage.NewBboltStore(dbPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error crítico: no se pudo inicializar la base de datos: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Critical error: could not initialize database: %v\n", err)
 		os.Exit(1)
 	}
 	defer storageService.Close()
+	defer playerService.Close()
 
 	initialModel := ui.InitialModel(youtubeService, playerService, storageService)
 
 	p := tea.NewProgram(initialModel, tea.WithAltScreen())
 
 	if _, err := p.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "¡Oh no! Hubo un error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Oh no! There was an error: %v\n", err)
 		os.Exit(1)
 	}
 }
