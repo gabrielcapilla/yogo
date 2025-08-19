@@ -28,3 +28,11 @@ type songNowPlayingMsg struct {
 type playErrorMsg struct {
 	err error
 }
+
+type HistoryLoadedMsg struct {
+	Entries []domain.HistoryEntry
+}
+
+type HistoryErrorMsg struct {
+	Err error
+}

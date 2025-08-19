@@ -21,13 +21,24 @@ type ytdlpResponse struct {
 	} `json:"entries"`
 }
 
-type YTDLPClient struct{}
-
-func NewYTDLPClient() ports.YoutubeService {
-	return &YTDLPClient{}
+type YTDLPClient struct {
+	cookiesPath string
 }
 
-func executeYTDLP(args ...string) ([]byte, error) {
+func NewYTDLPClient(cookiesPath string) ports.YoutubeService {
+	if cookiesPath != "" {
+		logger.Log.Printf("Cliente yt-dlp inicializado con archivo de cookies: %s", cookiesPath)
+	} else {
+		logger.Log.Println("Cliente yt-dlp inicializado sin archivo de cookies.")
+	}
+	return &YTDLPClient{cookiesPath: cookiesPath}
+}
+
+func (c *YTDLPClient) executeYTDLP(args ...string) ([]byte, error) {
+	if c.cookiesPath != "" {
+		args = append([]string{"--cookies", c.cookiesPath}, args...)
+	}
+
 	cmd := exec.Command("yt-dlp", args...)
 
 	var stdout, stderr bytes.Buffer
@@ -51,7 +62,7 @@ func (c *YTDLPClient) Search(query string) ([]domain.Song, error) {
 	searchQuery := fmt.Sprintf("ytsearch5:%s", query)
 	logger.Log.Printf("Ejecutando búsqueda en yt-dlp con query: '%s'", searchQuery)
 
-	output, err := executeYTDLP("--dump-single-json", searchQuery)
+	output, err := c.executeYTDLP("--dump-single-json", searchQuery)
 	if err != nil {
 		return nil, fmt.Errorf("error en yt-dlp search: %w (detalles en el log)", err)
 	}
@@ -81,7 +92,8 @@ func (c *YTDLPClient) Search(query string) ([]domain.Song, error) {
 func (c *YTDLPClient) GetStreamURL(songID string) (string, error) {
 	logger.Log.Printf("Obteniendo URL de stream para el ID: %s", songID)
 
-	output, err := executeYTDLP("-f", "bestaudio", "-g", songID)
+	formatSelector := "bestaudio/best"
+	output, err := c.executeYTDLP("-f", formatSelector, "-g", songID)
 	if err != nil {
 		return "", fmt.Errorf("error en yt-dlp get-url: %w (detalles en el log)", err)
 	}
