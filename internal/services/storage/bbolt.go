@@ -3,6 +3,8 @@ package storage
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
+	"time"
 
 	"yogo/internal/domain"
 	"yogo/internal/ports"
@@ -37,10 +39,9 @@ func (s *BboltStore) AddToHistory(entry domain.HistoryEntry) error {
 	return s.db.Update(func(tx *bbolt.Tx) error {
 		b := tx.Bucket(historyBucket)
 
-		key, err := entry.PlayedAt.MarshalBinary()
-		if err != nil {
-			return err
-		}
+		key := []byte(entry.Song.ID)
+
+		entry.PlayedAt = time.Now()
 
 		value, err := json.Marshal(entry)
 		if err != nil {
@@ -56,20 +57,27 @@ func (s *BboltStore) GetHistory(limit int) ([]domain.HistoryEntry, error) {
 
 	err := s.db.View(func(tx *bbolt.Tx) error {
 		b := tx.Bucket(historyBucket)
-		c := b.Cursor()
 
-		for k, v := c.Last(); k != nil && len(entries) < limit; k, v = c.Prev() {
+		return b.ForEach(func(k, v []byte) error {
 			var entry domain.HistoryEntry
 			if err := json.Unmarshal(v, &entry); err != nil {
 				return fmt.Errorf("error deserializing history entry: %w", err)
 			}
 			entries = append(entries, entry)
-		}
-		return nil
+			return nil
+		})
 	})
 
 	if err != nil {
 		return nil, err
+	}
+
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].PlayedAt.After(entries[j].PlayedAt)
+	})
+
+	if len(entries) > limit {
+		return entries[:limit], nil
 	}
 
 	return entries, nil
