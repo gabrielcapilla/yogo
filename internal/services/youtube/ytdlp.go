@@ -12,6 +12,8 @@ import (
 	"yogo/internal/ports"
 )
 
+var execCommand = exec.Command
+
 type ytdlpResponse struct {
 	Entries []struct {
 		ID       string `json:"id"`
@@ -39,7 +41,7 @@ func (c *YTDLPClient) executeYTDLP(args ...string) ([]byte, error) {
 		args = append([]string{"--cookies", c.cookiesPath}, args...)
 	}
 
-	cmd := exec.Command("yt-dlp", args...)
+	cmd := execCommand("yt-dlp", args...)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
