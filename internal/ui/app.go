@@ -3,6 +3,8 @@ package ui
 import (
 	"fmt"
 
+	"yogo/internal/ports"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -16,21 +18,25 @@ const (
 )
 
 type AppModel struct {
-	state  viewState
-	width  int
-	height int
-	styles Styles
+	state          viewState
+	width          int
+	height         int
+	styles         Styles
+	youtubeService ports.YoutubeService
+	search         SearchModel
 }
 
-func InitialModel() AppModel {
+func InitialModel(service ports.YoutubeService) AppModel {
 	return AppModel{
-		state:  globalView,
-		styles: DefaultStyles(),
+		state:          globalView,
+		styles:         DefaultStyles(),
+		youtubeService: service,
+		search:         NewSearchModel(service),
 	}
 }
 
 func (m AppModel) Init() tea.Cmd {
-	return nil
+	return m.search.Init()
 }
 
 func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -38,17 +44,32 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		return m, nil
-
+		var cmd tea.Cmd
+		m.search, cmd = m.search.Update(msg)
+		return m, cmd
 	case tea.KeyMsg:
-		switch m.state {
-		case globalView:
-			return m.updateGlobal(msg)
-		case searchView, historyView:
-			if msg.Type == tea.KeyEsc {
-				m.state = globalView
-				return m, nil
-			}
+		if msg.Type == tea.KeyCtrlC {
+			return m, tea.Quit
+		}
+	}
+
+	switch m.state {
+	case globalView:
+		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+			return m.updateGlobal(keyMsg)
+		}
+	case searchView:
+		if keyMsg, ok := msg.(tea.KeyMsg); ok && keyMsg.Type == tea.KeyEsc {
+			m.state = globalView
+			return m, nil
+		}
+		var cmd tea.Cmd
+		m.search, cmd = m.search.Update(msg)
+		return m, cmd
+	case historyView:
+		if keyMsg, ok := msg.(tea.KeyMsg); ok && keyMsg.Type == tea.KeyEsc {
+			m.state = globalView
+			return m, nil
 		}
 	}
 
@@ -57,11 +78,11 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *AppModel) updateGlobal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "q", "ctrl+c", "esc":
+	case "q", "esc":
 		return m, tea.Quit
 	case "s":
 		m.state = searchView
-		return m, nil
+		return m, m.search.textInput.Focus()
 	case "h":
 		m.state = historyView
 		return m, nil
@@ -100,16 +121,25 @@ func (m AppModel) renderTopBar() string {
 }
 
 func (m AppModel) renderMainContent(height int) string {
+	var content string
+
+	switch m.state {
+	case searchView:
+		content = m.search.View()
+	default:
+		helpText := "Navegación: [s]earch | [h]istory | [q]uit"
+		content = lipgloss.Place(
+			m.width-2, height-2,
+			lipgloss.Center, lipgloss.Center,
+			helpText,
+		)
+	}
+
 	mainStyle := m.styles.MainContent.
 		Width(m.width - 2).
 		Height(height - 2)
 
-	helpText := "Navegación: [s]earch | [h]istory | [q]uit"
-	return mainStyle.Render(lipgloss.Place(
-		m.width-2, height-2,
-		lipgloss.Center, lipgloss.Center,
-		helpText,
-	))
+	return mainStyle.Render(content)
 }
 
 func (m AppModel) renderPlayerBar() string {
