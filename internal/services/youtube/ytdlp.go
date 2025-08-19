@@ -27,9 +27,9 @@ type YTDLPClient struct {
 
 func NewYTDLPClient(cookiesPath string) ports.YoutubeService {
 	if cookiesPath != "" {
-		logger.Log.Printf("yt-dlp client initialized with cookies file: %s", cookiesPath)
+		logger.Log.Info().Str("cookies_path", cookiesPath).Msg("yt-dlp client initialized with cookies file")
 	} else {
-		logger.Log.Println("yt-dlp client initialized without cookies file.")
+		logger.Log.Info().Msg("yt-dlp client initialized without cookies file")
 	}
 	return &YTDLPClient{cookiesPath: cookiesPath}
 }
@@ -48,7 +48,7 @@ func (c *YTDLPClient) executeYTDLP(args ...string) ([]byte, error) {
 	err := cmd.Run()
 
 	if stderr.Len() > 0 {
-		logger.Log.Printf("yt-dlp stderr output (args: %v): %s", args, stderr.String())
+		logger.Log.Warn().Strs("args", args).Str("stderr", stderr.String()).Msg("yt-dlp stderr output")
 	}
 
 	if err != nil {
@@ -60,7 +60,7 @@ func (c *YTDLPClient) executeYTDLP(args ...string) ([]byte, error) {
 
 func (c *YTDLPClient) Search(query string) ([]domain.Song, error) {
 	searchQuery := fmt.Sprintf("ytsearch5:%s", query)
-	logger.Log.Printf("Executing yt-dlp search with query: '%s'", searchQuery)
+	logger.Log.Info().Str("query", searchQuery).Msg("Executing yt-dlp search")
 
 	output, err := c.executeYTDLP("--dump-single-json", "--", searchQuery)
 	if err != nil {
@@ -69,7 +69,7 @@ func (c *YTDLPClient) Search(query string) ([]domain.Song, error) {
 
 	var resp ytdlpResponse
 	if err := json.Unmarshal(output, &resp); err != nil {
-		logger.Log.Printf("Error parsing yt-dlp JSON. Received JSON: %s", string(output))
+		logger.Log.Error().Err(err).Str("json_output", string(output)).Msg("Error parsing yt-dlp JSON")
 		return nil, fmt.Errorf("error parsing yt-dlp JSON: %w", err)
 	}
 
@@ -85,12 +85,12 @@ func (c *YTDLPClient) Search(query string) ([]domain.Song, error) {
 			Artists: []string{artist},
 		})
 	}
-	logger.Log.Printf("Search successful, %d songs found.", len(songs))
+	logger.Log.Info().Int("song_count", len(songs)).Msg("Search successful")
 	return songs, nil
 }
 
 func (c *YTDLPClient) GetStreamURL(songID string) (string, error) {
-	logger.Log.Printf("Getting stream URL for ID: %s", songID)
+	logger.Log.Info().Str("song_id", songID).Msg("Getting stream URL")
 
 	formatSelector := "bestaudio/best"
 	output, err := c.executeYTDLP("-f", formatSelector, "-g", "--", songID)
@@ -104,6 +104,6 @@ func (c *YTDLPClient) GetStreamURL(songID string) (string, error) {
 	}
 
 	firstURL := strings.Split(url, "\n")[0]
-	logger.Log.Printf("Successfully obtained stream URL for ID %s.", songID)
+	logger.Log.Info().Str("song_id", songID).Msg("Successfully obtained stream URL")
 	return firstURL, nil
 }

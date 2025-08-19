@@ -43,7 +43,7 @@ func (p *MpvPlayer) startMpvProcess() error {
 		}
 	}
 
-	logger.Log.Println("Starting new mpv process...")
+	logger.Log.Info().Msg("Starting new mpv process...")
 	args := []string{
 		"--idle",
 		"--input-ipc-server=" + p.socketPath,
@@ -51,8 +51,8 @@ func (p *MpvPlayer) startMpvProcess() error {
 	}
 	p.cmd = exec.Command("mpv", args...)
 
-	p.cmd.Stdout = logger.Log.Writer()
-	p.cmd.Stderr = logger.Log.Writer()
+	p.cmd.Stdout = logger.Log
+	p.cmd.Stderr = logger.Log
 
 	if err := p.cmd.Start(); err != nil {
 		p.cmd = nil
@@ -61,7 +61,7 @@ func (p *MpvPlayer) startMpvProcess() error {
 
 	for i := 0; i < 20; i++ {
 		if _, err := os.Stat(p.socketPath); err == nil {
-			logger.Log.Println("mpv socket detected. Process ready.")
+			logger.Log.Info().Msg("mpv socket detected. Process ready.")
 			return nil
 		}
 		time.Sleep(100 * time.Millisecond)
@@ -98,16 +98,16 @@ func (p *MpvPlayer) sendCommands(cmds ...MpvCommand) ([]MpvResponse, error) {
 			if err := json.Unmarshal(line, &resp); err == nil {
 				if resp.Event == "" && resp.RequestID > 0 {
 					responses = append(responses, resp)
-					logger.Log.Printf("Processed mpv command response: %s", string(line))
+					logger.Log.Debug().RawJSON("response", line).Msg("Processed mpv command response")
 				} else {
-					logger.Log.Printf("Ignored mpv event: %s", string(line))
+					logger.Log.Debug().RawJSON("event", line).Msg("Ignored mpv event")
 				}
 			} else {
-				logger.Log.Printf("Could not parse line from mpv: %s", string(line))
+				logger.Log.Warn().Str("line", string(line)).Msg("Could not parse line from mpv")
 			}
 		} else {
 			if err := scanner.Err(); err != nil {
-				logger.Log.Printf("Error reading from mpv socket: %v", err)
+				logger.Log.Error().Err(err).Msg("Error reading from mpv socket")
 			}
 			break
 		}
@@ -169,7 +169,7 @@ func (p *MpvPlayer) GetState() (ports.PlayerState, error) {
 	}
 
 	if len(responses) < 3 {
-		logger.Log.Printf("Expected 3 responses from GetState, but received %d", len(responses))
+		logger.Log.Warn().Int("received_count", len(responses)).Int("expected_count", 3).Msg("Unexpected number of responses from GetState")
 	}
 
 	for _, resp := range responses {
@@ -195,15 +195,15 @@ func (p *MpvPlayer) GetState() (ports.PlayerState, error) {
 }
 
 func (p *MpvPlayer) Close() error {
-	logger.Log.Println("Closing player service...")
+	logger.Log.Info().Msg("Closing player service...")
 	if p.cmd != nil && p.cmd.Process != nil {
-		logger.Log.Println("Terminating mpv process...")
+		logger.Log.Info().Msg("Terminating mpv process...")
 		if err := p.cmd.Process.Kill(); err != nil {
-			logger.Log.Printf("Error terminating mpv process: %v", err)
+			logger.Log.Error().Err(err).Msg("Error terminating mpv process")
 			return err
 		}
 	}
 	os.Remove(p.socketPath)
-	logger.Log.Println("Player service closed.")
+	logger.Log.Info().Msg("Player service closed.")
 	return nil
 }

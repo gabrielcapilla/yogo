@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	_ "yogo/internal/logger"
+	"yogo/internal/logger"
 	"yogo/internal/services/player"
 	"yogo/internal/services/storage"
 	"yogo/internal/services/youtube"
@@ -19,12 +19,15 @@ var version = "dev"
 
 func main() {
 	versionFlag := flag.Bool("v", false, "print version and exit")
+	debugFlag := flag.Bool("debug", false, "enable debug logging")
 	flag.Parse()
 
 	if *versionFlag {
 		fmt.Println(version)
 		os.Exit(0)
 	}
+
+	logger.Setup(*debugFlag)
 
 	mpvSocketPath := "/tmp/yogo-mpvsocket"
 
