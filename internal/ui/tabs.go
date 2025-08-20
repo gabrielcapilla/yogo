@@ -27,7 +27,7 @@ type TabModel struct {
 
 func NewTabModel() TabModel {
 	return TabModel{
-		Tabs:      []string{"Buscar", "Historial"},
+		Tabs:      []string{"Search", "History"},
 		ActiveTab: 0,
 	}
 }

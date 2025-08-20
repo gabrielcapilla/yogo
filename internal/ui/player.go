@@ -22,10 +22,14 @@ type PlayerModel struct {
 }
 
 func NewPlayerModel(styles Styles) PlayerModel {
+	prog := progress.New(
+		progress.WithDefaultGradient(),
+		progress.WithoutPercentage(),
+	)
 	return PlayerModel{
 		status:   "Idle",
 		styles:   styles,
-		progress: progress.New(progress.WithDefaultGradient()),
+		progress: prog,
 	}
 }
 
@@ -51,7 +55,7 @@ func (m PlayerModel) Update(msg tea.Msg) (PlayerModel, tea.Cmd) {
 func (m *PlayerModel) SetSize(w, h int) {
 	m.width = w
 	m.height = h
-	m.progress.Width = w - 20
+	m.progress.Width = w - 24
 }
 
 func (m *PlayerModel) SetContent(status string, song domain.Song, err error) {
@@ -69,7 +73,14 @@ func formatDuration(seconds float64) string {
 		return "00:00"
 	}
 	d := time.Duration(seconds) * time.Second
-	return fmt.Sprintf("%02d:%02d", int(d.Minutes())%60, int(d.Seconds())%60)
+	h := int(d.Hours())
+	m := int(d.Minutes()) % 60
+	s := int(d.Seconds()) % 60
+
+	if h > 0 {
+		return fmt.Sprintf("%02d:%02d:%02d", h, m, s)
+	}
+	return fmt.Sprintf("%02d:%02d", m, s)
 }
 
 func (m PlayerModel) View() string {
@@ -84,7 +95,8 @@ func (m PlayerModel) View() string {
 		durStr := formatDuration(m.state.Duration)
 
 		songInfo := fmt.Sprintf("%s - %s", m.styles.PlayerTitle.Render(m.song.Title), m.styles.PlayerArtist.Render(m.song.Artists[0]))
-		songInfo = truncate(songInfo, m.width)
+
+		centeredSongInfo := lipgloss.PlaceHorizontal(m.width, lipgloss.Center, songInfo)
 
 		progressView := lipgloss.JoinHorizontal(lipgloss.Center,
 			m.styles.Help.Render(posStr),
@@ -94,7 +106,7 @@ func (m PlayerModel) View() string {
 			m.styles.Help.Render(durStr),
 		)
 
-		content = lipgloss.JoinVertical(lipgloss.Left, songInfo, progressView)
+		content = lipgloss.JoinVertical(lipgloss.Left, centeredSongInfo, progressView)
 
 	case "Error":
 		content = m.styles.ErrorText.Render(fmt.Sprintf("Error: %v", m.err))

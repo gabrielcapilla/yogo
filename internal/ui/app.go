@@ -5,6 +5,7 @@ import (
 	"yogo/internal/domain"
 	"yogo/internal/ports"
 
+	"github.com/charmbracelet/bubbles/progress"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -52,21 +53,14 @@ func InitialModel(ytService ports.YoutubeService, pService ports.PlayerService, 
 	}
 }
 
-func (m AppModel) tickCmd() tea.Cmd {
+func tickCmd() tea.Cmd {
 	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
-		state, err := m.playerService.GetState()
-		if err != nil {
-			return playErrorMsg{err}
-		}
-		if state.IsPlaying {
-			return playerStateUpdateMsg{state}
-		}
-		return nil
+		return tickMsg(t)
 	})
 }
 
 func (m AppModel) Init() tea.Cmd {
-	return tea.Batch(m.search.Init(), m.history.Init(), m.tickCmd())
+	return tea.Batch(m.search.Init(), m.history.Init(), tickCmd())
 }
 
 func getStreamURLCmd(service ports.YoutubeService, song domain.Song) tea.Cmd {
@@ -97,6 +91,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		return m, nil
 	case changeFocusMsg:
 		m.focus = msg.newFocus
 		if m.focus == searchFocus {
@@ -122,19 +117,19 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			case "tab", "l":
 				m.tabs.Next()
-				if m.tabs.ActiveTab == 1 { // History tab
+				if m.tabs.ActiveTab == 1 {
 					cmds = append(cmds, m.loadHistoryCmd())
 				}
 			case "shift+tab", "h":
 				m.tabs.Prev()
-				if m.tabs.ActiveTab == 1 { // History tab
+				if m.tabs.ActiveTab == 1 {
 					cmds = append(cmds, m.loadHistoryCmd())
 				}
 			case "enter":
-				if m.tabs.ActiveTab == 0 { // Search
+				if m.tabs.ActiveTab == 0 {
 					m.focus = searchFocus
 					m.search.Focus()
-				} else { // History
+				} else {
 					m.focus = historyFocus
 				}
 			case " ":
@@ -154,10 +149,28 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg := msg.(type) {
+	case tickMsg:
+		state, err := m.playerService.GetState()
+		if err != nil {
+			cmds = append(cmds, func() tea.Msg { return playErrorMsg{err} })
+		} else if state.IsPlaying || m.player.status == "Playing" {
+			cmds = append(cmds, func() tea.Msg { return playerStateUpdateMsg{state} })
+		}
+		cmds = append(cmds, tickCmd())
+
+	case playerStateUpdateMsg:
+		m.player, cmd = m.player.Update(msg)
+		cmds = append(cmds, cmd)
+
+	case progress.FrameMsg:
+		m.player, cmd = m.player.Update(msg)
+		cmds = append(cmds, cmd)
+
 	case playSongMsg:
 		m.player.SetContent("Loading", msg.song, nil)
 		go m.storageService.AddToHistory(domain.HistoryEntry{Song: msg.song, PlayedAt: time.Now()})
 		cmds = append(cmds, getStreamURLCmd(m.youtubeService, msg.song))
+
 	case streamURLFetchedMsg:
 		err := m.playerService.Play(msg.url)
 		if err != nil {
@@ -165,28 +178,25 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			cmds = append(cmds, func() tea.Msg { return songNowPlayingMsg{song: msg.song} })
 		}
+
 	case songNowPlayingMsg:
 		m.player.SetContent("Playing", msg.song, nil)
+
 	case playErrorMsg:
 		m.player.SetContent("Error", domain.Song{}, msg.err)
-	case playerStateUpdateMsg:
-		m.player, cmd = m.player.Update(msg)
-		cmds = append(cmds, cmd)
-		cmds = append(cmds, m.tickCmd())
+
 	case HistoryLoadedMsg, HistoryErrorMsg:
 		if m.tabs.ActiveTab == 1 {
 			m.history, cmd = m.history.Update(msg)
 			cmds = append(cmds, cmd)
 		}
+
 	case searchResultsMsg, searchErrorMsg:
 		if m.tabs.ActiveTab == 0 {
 			m.search, cmd = m.search.Update(msg)
 			cmds = append(cmds, cmd)
 		}
 	}
-
-	m.player, cmd = m.player.Update(msg)
-	cmds = append(cmds, cmd)
 
 	return m, tea.Batch(cmds...)
 }
@@ -204,10 +214,10 @@ func (m AppModel) View() string {
 
 	var mainContent string
 	switch m.tabs.ActiveTab {
-	case 0: // Search
+	case 0:
 		m.search.SetSize(availableWidth-2, mainContentHeight-2)
 		mainContent = m.search.View()
-	case 1: // History
+	case 1:
 		m.history.SetSize(availableWidth-2, mainContentHeight-2)
 		mainContent = m.history.View()
 	}

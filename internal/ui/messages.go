@@ -1,9 +1,12 @@
 package ui
 
 import (
+	"time"
 	"yogo/internal/domain"
 	"yogo/internal/ports"
 )
+
+type tickMsg time.Time
 
 type searchResultsMsg struct {
 	songs []domain.Song
