@@ -14,13 +14,6 @@ const (
 	MIN_HEIGHT = 14
 )
 
-type viewState int
-
-const (
-	searchView viewState = iota
-	historyView
-)
-
 type focusState int
 
 const (
@@ -30,13 +23,13 @@ const (
 )
 
 type AppModel struct {
-	currentView    viewState
 	focus          focusState
 	width, height  int
 	youtubeService ports.YoutubeService
 	playerService  ports.PlayerService
 	storageService ports.StorageService
 	config         domain.Config
+	tabs           TabModel
 	search         SearchModel
 	history        HistoryModel
 	player         PlayerModel
@@ -46,12 +39,12 @@ type AppModel struct {
 func InitialModel(ytService ports.YoutubeService, pService ports.PlayerService, sService ports.StorageService, cfg domain.Config) AppModel {
 	styles := DefaultStyles()
 	return AppModel{
-		currentView:    searchView,
 		focus:          globalFocus,
 		youtubeService: ytService,
 		playerService:  pService,
 		storageService: sService,
 		config:         cfg,
+		tabs:           NewTabModel(),
 		search:         NewSearchModel(ytService, styles),
 		history:        NewHistoryModel(sService, styles),
 		player:         NewPlayerModel(styles),
@@ -61,11 +54,11 @@ func InitialModel(ytService ports.YoutubeService, pService ports.PlayerService, 
 
 func (m AppModel) tickCmd() tea.Cmd {
 	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
-		if m.player.status == "Playing" {
-			state, err := m.playerService.GetState()
-			if err != nil {
-				return playErrorMsg{err}
-			}
+		state, err := m.playerService.GetState()
+		if err != nil {
+			return playErrorMsg{err}
+		}
+		if state.IsPlaying {
 			return playerStateUpdateMsg{state}
 		}
 		return nil
@@ -127,14 +120,23 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch msg.String() {
 			case "ctrl+c", "q":
 				return m, tea.Quit
-			case "s":
-				m.currentView = searchView
-				m.focus = searchFocus
-				m.search.Focus()
-			case "h":
-				m.currentView = historyView
-				m.focus = historyFocus
-				cmds = append(cmds, m.loadHistoryCmd())
+			case "tab", "l":
+				m.tabs.Next()
+				if m.tabs.ActiveTab == 1 { // History tab
+					cmds = append(cmds, m.loadHistoryCmd())
+				}
+			case "shift+tab", "h":
+				m.tabs.Prev()
+				if m.tabs.ActiveTab == 1 { // History tab
+					cmds = append(cmds, m.loadHistoryCmd())
+				}
+			case "enter":
+				if m.tabs.ActiveTab == 0 { // Search
+					m.focus = searchFocus
+					m.search.Focus()
+				} else { // History
+					m.focus = historyFocus
+				}
 			case " ":
 				if m.player.status == "Playing" || m.player.status == "Paused" {
 					m.playerService.Pause()
@@ -172,12 +174,12 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, cmd)
 		cmds = append(cmds, m.tickCmd())
 	case HistoryLoadedMsg, HistoryErrorMsg:
-		if m.currentView == historyView {
+		if m.tabs.ActiveTab == 1 {
 			m.history, cmd = m.history.Update(msg)
 			cmds = append(cmds, cmd)
 		}
 	case searchResultsMsg, searchErrorMsg:
-		if m.currentView == searchView {
+		if m.tabs.ActiveTab == 0 {
 			m.search, cmd = m.search.Update(msg)
 			cmds = append(cmds, cmd)
 		}
@@ -195,34 +197,33 @@ func (m AppModel) View() string {
 	}
 
 	availableWidth := m.width - m.styles.App.GetHorizontalFrameSize()
-	playerHeight := 3
+	playerHeight := 4
 	helpHeight := 1
-	mainHeight := m.height - playerHeight - helpHeight - m.styles.App.GetVerticalFrameSize()
-	mainInnerWidth := availableWidth - 2
-	playerInnerWidth := availableWidth - 2
-	mainInnerHeight := mainHeight - 2
-	playerInnerHeight := playerHeight - 2
+	tabsHeight := lipgloss.Height(m.tabs.View())
+	mainContentHeight := m.height - playerHeight - helpHeight - tabsHeight - m.styles.App.GetVerticalFrameSize()
 
 	var mainContent string
-	switch m.currentView {
-	case searchView:
-		m.search.SetSize(mainInnerWidth, mainInnerHeight)
+	switch m.tabs.ActiveTab {
+	case 0: // Search
+		m.search.SetSize(availableWidth-2, mainContentHeight-2)
 		mainContent = m.search.View()
-	case historyView:
-		m.history.SetSize(mainInnerWidth, mainInnerHeight)
+	case 1: // History
+		m.history.SetSize(availableWidth-2, mainContentHeight-2)
 		mainContent = m.history.View()
 	}
 
-	mainPanel := m.styles.Box.Width(availableWidth).Height(mainHeight).Render(mainContent)
+	tabsView := m.tabs.View()
+	mainPanel := m.styles.Box.Copy().UnsetBorderTop().Width(availableWidth).Height(mainContentHeight).Render(mainContent)
+	mainView := lipgloss.JoinVertical(lipgloss.Left, tabsView, mainPanel)
 
-	m.player.SetSize(playerInnerWidth, playerInnerHeight)
+	m.player.SetSize(availableWidth-2, playerHeight-2)
 	playerContent := m.player.View()
 	playerPanel := m.styles.Box.Width(availableWidth).Height(playerHeight).Render(playerContent)
 
-	helpView := m.styles.Help.Width(availableWidth).Render("Help: [s]earch | [h]istory | [↑/↓/Tab] navigate | [Enter] select | [q]uit")
+	helpView := m.styles.Help.Width(availableWidth).Render("Help: [Tab] switch tab | [Enter] focus | [Space] play/pause | [←/→] seek | [q]uit")
 
 	return m.styles.App.Render(lipgloss.JoinVertical(lipgloss.Top,
-		mainPanel,
+		mainView,
 		playerPanel,
 		helpView,
 	))

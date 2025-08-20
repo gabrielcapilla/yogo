@@ -6,6 +6,7 @@ import (
 	"yogo/internal/domain"
 	"yogo/internal/ports"
 
+	"github.com/charmbracelet/bubbles/progress"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -17,18 +18,32 @@ type PlayerModel struct {
 	err           error
 	styles        Styles
 	state         ports.PlayerState
+	progress      progress.Model
 }
 
 func NewPlayerModel(styles Styles) PlayerModel {
-	return PlayerModel{status: "Idle", styles: styles}
+	return PlayerModel{
+		status:   "Idle",
+		styles:   styles,
+		progress: progress.New(progress.WithDefaultGradient()),
+	}
 }
 
 func (m PlayerModel) Init() tea.Cmd { return nil }
 
 func (m PlayerModel) Update(msg tea.Msg) (PlayerModel, tea.Cmd) {
+	var cmd tea.Cmd
 	switch msg := msg.(type) {
 	case playerStateUpdateMsg:
 		m.state = msg.state
+		if m.state.Duration > 0 {
+			cmd = m.progress.SetPercent(m.state.Position / m.state.Duration)
+		}
+		return m, cmd
+	case progress.FrameMsg:
+		progressModel, cmd := m.progress.Update(msg)
+		m.progress = progressModel.(progress.Model)
+		return m, cmd
 	}
 	return m, nil
 }
@@ -36,6 +51,7 @@ func (m PlayerModel) Update(msg tea.Msg) (PlayerModel, tea.Cmd) {
 func (m *PlayerModel) SetSize(w, h int) {
 	m.width = w
 	m.height = h
+	m.progress.Width = w - 20
 }
 
 func (m *PlayerModel) SetContent(status string, song domain.Song, err error) {
@@ -44,6 +60,7 @@ func (m *PlayerModel) SetContent(status string, song domain.Song, err error) {
 	m.err = err
 	if status != "Playing" {
 		m.state = ports.PlayerState{}
+		m.progress.SetPercent(0)
 	}
 }
 
@@ -60,28 +77,29 @@ func (m PlayerModel) View() string {
 	switch m.status {
 	case "Idle":
 		content = "..."
+	case "Loading":
+		content = "Loading: " + truncate(m.song.Title, m.width-len("Loading: ")-2)
 	case "Playing":
-		pos := formatDuration(m.state.Position)
-		dur := formatDuration(m.state.Duration)
-		timeInfo := fmt.Sprintf("[%s / %s]", pos, dur)
+		posStr := formatDuration(m.state.Position)
+		durStr := formatDuration(m.state.Duration)
 
-		sTitle := m.styles.PlayerTitle.Render(m.song.Title)
-		sArtist := m.styles.PlayerArtist.Render(m.song.Artists[0])
-		sTime := m.styles.Help.Render(timeInfo)
+		songInfo := fmt.Sprintf("%s - %s", m.styles.PlayerTitle.Render(m.song.Title), m.styles.PlayerArtist.Render(m.song.Artists[0]))
+		songInfo = truncate(songInfo, m.width)
 
-		titleBlock := lipgloss.JoinHorizontal(lipgloss.Left, sTitle, " - ", sArtist)
+		progressView := lipgloss.JoinHorizontal(lipgloss.Center,
+			m.styles.Help.Render(posStr),
+			" ",
+			m.progress.View(),
+			" ",
+			m.styles.Help.Render(durStr),
+		)
 
-		maxTitleWidth := m.width - lipgloss.Width(sTime) - 1
-		if maxTitleWidth < 0 {
-			maxTitleWidth = 0
-		}
-		titleBlock = truncate(titleBlock, maxTitleWidth)
+		content = lipgloss.JoinVertical(lipgloss.Left, songInfo, progressView)
 
-		content = lipgloss.JoinHorizontal(lipgloss.Right, titleBlock, sTime)
 	case "Error":
 		content = m.styles.ErrorText.Render(fmt.Sprintf("Error: %v", m.err))
 	default:
-		content = m.status + ": " + truncate(m.song.Title, m.width-len(m.status)-2)
+		content = m.status
 	}
 
 	return lipgloss.Place(m.width, m.height, lipgloss.Left, lipgloss.Center, content)
