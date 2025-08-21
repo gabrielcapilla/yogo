@@ -171,7 +171,7 @@ func (m SearchModel) Update(msg tea.Msg) (SearchModel, tea.Cmd) {
 		case tea.KeyMsg:
 			if key.String() == "enter" {
 				if selectedItem, ok := m.resultsList.SelectedItem().(searchItem); ok {
-					return m, func() tea.Msg { return playSongMsg{song: selectedItem.song} }
+					return m, func() tea.Msg { return playSongMsg(selectedItem) }
 				}
 			}
 		}
