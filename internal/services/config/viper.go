@@ -21,7 +21,6 @@ func NewViperConfigService() ports.ConfigService {
 
 	if configDir != "" {
 		yogoConfigDir := filepath.Join(configDir, "yogo")
-		// Ensure the configuration directory exists.
 		if err := os.MkdirAll(yogoConfigDir, 0755); err != nil {
 			logger.Log.Error().Err(err).Msg("Could not create yogo config directory")
 		} else {
@@ -31,7 +30,7 @@ func NewViperConfigService() ports.ConfigService {
 
 	viper.SetConfigName("config")
 	viper.SetConfigType("yml")
-	viper.AddConfigPath(".") // Also look in the current directory
+	viper.AddConfigPath(".")
 
 	viper.SetDefault("cookiesPath", "")
 	viper.SetDefault("historyLimit", 50)
@@ -45,13 +44,11 @@ func (s *ViperConfigService) Load() (domain.Config, error) {
 	if err := viper.ReadInConfig(); err != nil {
 		var configFileNotFoundError viper.ConfigFileNotFoundError
 		if errors.As(err, &configFileNotFoundError) {
-			// Config file not found; create it with defaults.
 			logger.Log.Info().Msg("Config file not found, creating with default values.")
 			if err := viper.SafeWriteConfig(); err != nil {
 				return cfg, err
 			}
 		} else {
-			// Config file was found but another error was produced
 			return cfg, err
 		}
 	}
