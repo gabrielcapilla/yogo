@@ -9,24 +9,37 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+type activeView int
+
+const (
+	searchView activeView = iota
+	historyView
+)
+
 type AppModel struct {
 	width, height  int
 	styles         Styles
 	focus          focusState
+	activeView     activeView
 	youtubeService ports.YoutubeService
 	playerService  ports.PlayerService
+	storageService ports.StorageService
 	search         SearchModel
+	history        HistoryModel
 	player         PlayerModel
 }
 
-func InitialModel(ytService ports.YoutubeService, pService ports.PlayerService) AppModel {
+func InitialModel(ytService ports.YoutubeService, pService ports.PlayerService, sService ports.StorageService, cfg domain.Config) AppModel {
 	styles := DefaultStyles()
 	return AppModel{
 		styles:         styles,
 		focus:          globalFocus,
+		activeView:     searchView,
 		youtubeService: ytService,
 		playerService:  pService,
+		storageService: sService,
 		search:         NewSearchModel(ytService, styles),
+		history:        NewHistoryModel(sService, cfg, styles),
 		player:         NewPlayerModel(),
 	}
 }
@@ -64,9 +77,14 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case changeFocusMsg:
 		m.focus = msg.newFocus
 		if m.focus == searchFocus {
-			cmd = m.search.Focus()
+			if m.activeView == searchView {
+				cmd = m.search.Focus()
+			} else {
+				cmd = m.history.Focus()
+			}
 		} else {
 			m.search.Blur()
+			m.history.Blur()
 		}
 		cmds = append(cmds, cmd)
 		return m, tea.Batch(cmds...)
@@ -74,6 +92,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case playSongMsg:
 		m.focus = globalFocus
 		m.player.SetContent(statusLoading, msg.song, nil)
+		go m.storageService.AddToHistory(domain.HistoryEntry{Song: msg.song, PlayedAt: time.Now()})
 		cmds = append(cmds, getStreamURLCmd(m.youtubeService, msg.song))
 
 	case streamURLFetchedMsg:
@@ -109,25 +128,36 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "ctrl+c", "q":
 				return m, tea.Quit
 			case "s":
+				m.activeView = searchView
 				return m, func() tea.Msg { return changeFocusMsg{newFocus: searchFocus} }
+			case "h":
+				m.activeView = historyView
+				cmds = append(cmds, m.history.Init())
+				cmds = append(cmds, func() tea.Msg { return changeFocusMsg{newFocus: searchFocus} })
+				return m, tea.Batch(cmds...)
 			case " ":
 				if m.player.status == statusPlaying || m.player.status == statusPaused {
 					m.playerService.Pause()
 				}
 			case "right":
 				if m.player.status == statusPlaying || m.player.status == statusPaused {
-					m.playerService.Seek(10)
+					m.playerService.Seek(5)
 				}
 			case "left":
 				if m.player.status == statusPlaying || m.player.status == statusPaused {
-					m.playerService.Seek(-10)
+					m.playerService.Seek(-5)
 				}
 			}
 		}
 	}
 
 	if m.focus == searchFocus {
-		m.search, cmd = m.search.Update(msg)
+		switch m.activeView {
+		case searchView:
+			m.search, cmd = m.search.Update(msg)
+		case historyView:
+			m.history, cmd = m.history.Update(msg)
+		}
 		cmds = append(cmds, cmd)
 	}
 	m.player, cmd = m.player.Update(msg)
@@ -148,15 +178,25 @@ func (m AppModel) View() string {
 	mainPanelHeight := appHeight - footerHeight
 
 	m.search.SetSize(appWidth, mainPanelHeight)
+	m.history.SetSize(appWidth, mainPanelHeight)
 	m.player.SetSize(appWidth)
 
-	mainContent, searchFooterContent := m.search.View()
+	var mainContent, searchFooterContent string
+	var internalFocus searchComponentFocus
+
+	switch m.activeView {
+	case searchView:
+		mainContent, searchFooterContent = m.search.View()
+		internalFocus = m.search.GetFocus()
+	case historyView:
+		mainContent, searchFooterContent = m.history.View()
+		internalFocus = m.history.GetFocus()
+	}
+
 	playerFooterContent := m.player.View()
 
 	var mainPanelStyle, footerPanelStyle lipgloss.Style
 	var footerContent, footerTitle string
-
-	searchInternalFocus := m.search.GetFocus()
 
 	showPlayer := m.player.status != statusIdle
 	if m.focus == searchFocus {
@@ -164,15 +204,21 @@ func (m AppModel) View() string {
 	}
 
 	if showPlayer {
+		footerTitle = "player"
 		footerContent = playerFooterContent
 		footerPanelStyle = focusedBorderStyle
 		mainPanelStyle = blurredBorderStyle
 	} else {
+		if m.activeView == searchView {
+			footerTitle = "search"
+		} else {
+			footerTitle = "history"
+		}
 		footerContent = searchFooterContent
-		if m.focus == searchFocus && searchInternalFocus == inputFocus {
+		if m.focus == searchFocus && internalFocus == inputFocus {
 			footerPanelStyle = focusedBorderStyle
 			mainPanelStyle = blurredBorderStyle
-		} else if m.focus == searchFocus && searchInternalFocus == listFocus {
+		} else if m.focus == searchFocus && internalFocus == listFocus {
 			footerPanelStyle = blurredBorderStyle
 			mainPanelStyle = focusedBorderStyle
 		} else {

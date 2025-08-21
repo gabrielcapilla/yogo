@@ -11,12 +11,16 @@ type focusState int
 const (
 	globalFocus focusState = iota
 	searchFocus
+	historyFocus
 )
 
 type changeFocusMsg struct{ newFocus focusState }
 
 type searchResultsMsg struct{ songs []domain.Song }
 type searchErrorMsg struct{ err error }
+
+type historyLoadedMsg struct{ entries []domain.HistoryEntry }
+type historyErrorMsg struct{ err error }
 
 type tickMsg time.Time
 type playSongMsg struct{ song domain.Song }

@@ -8,6 +8,7 @@ import (
 	"yogo/internal/logger"
 	"yogo/internal/services/config"
 	"yogo/internal/services/player"
+	"yogo/internal/services/storage"
 	"yogo/internal/services/youtube"
 	"yogo/internal/ui"
 
@@ -23,7 +24,7 @@ func main() {
 	configService := config.NewViperConfigService()
 	cfg, err := configService.Load()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error loading configuration: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Error cargando la configuración: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -32,16 +33,27 @@ func main() {
 	socketPath := filepath.Join(os.TempDir(), "yogo.sock")
 	playerService := player.NewMpvPlayer(socketPath)
 
+	configDir, _ := os.UserConfigDir()
+	dbPath := filepath.Join(configDir, "yogo", "history.db")
+	storageService, err := storage.NewBboltStore(dbPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error inicializando la base de datos: %v\n", err)
+		os.Exit(1)
+	}
+
 	defer func() {
 		if err := playerService.Close(); err != nil {
-			logger.Log.Error().Err(err).Msg("Error closing the player service")
+			logger.Log.Error().Err(err).Msg("Error cerrando el servicio del reproductor")
+		}
+		if err := storageService.Close(); err != nil {
+			logger.Log.Error().Err(err).Msg("Error cerrando el servicio de almacenamiento")
 		}
 	}()
 
-	p := tea.NewProgram(ui.InitialModel(ytService, playerService), tea.WithAltScreen())
+	p := tea.NewProgram(ui.InitialModel(ytService, playerService, storageService, cfg), tea.WithAltScreen())
 
 	if _, err := p.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error executing the program: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Error ejecutando el programa: %v\n", err)
 		os.Exit(1)
 	}
 }
