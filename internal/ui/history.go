@@ -88,9 +88,9 @@ func NewHistoryModel(service ports.StorageService, cfg domain.Config, styles Sty
 func (m *HistoryModel) loadHistory() tea.Msg {
 	entries, err := m.storageService.GetHistory(m.config.HistoryLimit)
 	if err != nil {
-		return historyErrorMsg{err}
+		return ports.HistoryErrorMsg{Err: err}
 	}
-	return historyLoadedMsg{entries}
+	return ports.HistoryLoadedMsg{Entries: entries}
 }
 
 func (m *HistoryModel) Init() tea.Cmd {
@@ -119,18 +119,18 @@ func (m HistoryModel) Update(msg tea.Msg) (HistoryModel, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
-	case historyLoadedMsg:
+	case ports.HistoryLoadedMsg:
 		m.isLoading = false
-		items := make([]list.Item, len(msg.entries))
-		for i, entry := range msg.entries {
+		items := make([]list.Item, len(msg.Entries))
+		for i, entry := range msg.Entries {
 			items[i] = historyItem{entry: entry}
 		}
 		m.fullHistory = items
 		m.resultsList.SetItems(items)
 		return m, nil
-	case historyErrorMsg:
+	case ports.HistoryErrorMsg:
 		m.isLoading = false
-		m.err = msg.err
+		m.err = msg.Err
 		return m, nil
 	}
 
@@ -143,7 +143,7 @@ func (m HistoryModel) Update(msg tea.Msg) (HistoryModel, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "esc":
-			return m, func() tea.Msg { return changeFocusMsg{newFocus: globalFocus} }
+			return m, func() tea.Msg { return ports.ChangeFocusMsg{NewFocus: ports.GlobalFocus} }
 		case "tab":
 			if m.focus == inputFocus {
 				m.focus = listFocus
@@ -178,7 +178,7 @@ func (m HistoryModel) Update(msg tea.Msg) (HistoryModel, tea.Cmd) {
 		case tea.KeyMsg:
 			if key.String() == "enter" {
 				if selectedItem, ok := m.resultsList.SelectedItem().(historyItem); ok {
-					return m, func() tea.Msg { return playSongMsg{song: selectedItem.entry.Song} }
+					return m, func() tea.Msg { return ports.PlaySongMsg{Song: selectedItem.entry.Song} }
 				}
 			}
 		}

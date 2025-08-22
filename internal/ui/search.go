@@ -1,10 +1,9 @@
-// internal/ui/search.go
 package ui
 
-// ... (imports y structs sin cambios) ...
 import (
 	"fmt"
 	"io"
+	"strings"
 	"yogo/internal/domain"
 	"yogo/internal/ports"
 
@@ -54,6 +53,7 @@ const (
 
 type SearchModel struct {
 	youtubeService ports.YoutubeService
+	config         domain.Config
 	styles         Styles
 	focus          searchComponentFocus
 	textInput      textinput.Model
@@ -63,10 +63,9 @@ type SearchModel struct {
 	err            error
 }
 
-// ... (NewSearchModel y otros métodos sin cambios) ...
-func NewSearchModel(service ports.YoutubeService, styles Styles) SearchModel {
+func NewSearchModel(service ports.YoutubeService, cfg domain.Config, styles Styles) SearchModel {
 	ti := textinput.New()
-	ti.Placeholder = "Search for a song..."
+	ti.Placeholder = "Search for a song or paste a URL..."
 	ti.Prompt = ""
 	ti.PromptStyle = lipgloss.NewStyle()
 	ti.TextStyle = lipgloss.NewStyle()
@@ -83,12 +82,26 @@ func NewSearchModel(service ports.YoutubeService, styles Styles) SearchModel {
 
 	return SearchModel{
 		youtubeService: service,
+		config:         cfg,
 		styles:         styles,
 		focus:          inputFocus,
 		textInput:      ti,
 		resultsList:    li,
 		spinner:        s,
 	}
+}
+
+func (m *SearchModel) performSearch() tea.Msg {
+	songs, err := m.youtubeService.Search(m.textInput.Value(), m.config.SearchLimit)
+	if err != nil {
+		return ports.SearchErrorMsg{Err: err}
+	}
+
+	if len(songs) == 1 && strings.Contains(m.textInput.Value(), "http") {
+		return ports.PlaySongMsg{Song: songs[0]}
+	}
+
+	return ports.SearchResultsMsg{Songs: songs}
 }
 
 func (m *SearchModel) Init() tea.Cmd { return m.spinner.Tick }
@@ -105,30 +118,23 @@ func (m *SearchModel) SetSize(w, h int) {
 	m.textInput.Width = w - 2
 	m.resultsList.SetSize(w-2, h-2)
 }
-func (m *SearchModel) performSearch() tea.Msg {
-	songs, err := m.youtubeService.Search(m.textInput.Value())
-	if err != nil {
-		return searchErrorMsg{err}
-	}
-	return searchResultsMsg{songs}
-}
 
 func (m SearchModel) Update(msg tea.Msg) (SearchModel, tea.Cmd) {
 	var cmd tea.Cmd
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
-	case searchResultsMsg:
+	case ports.SearchResultsMsg:
 		m.isLoading = false
-		items := make([]list.Item, len(msg.songs))
-		for i, song := range msg.songs {
+		items := make([]list.Item, len(msg.Songs))
+		for i, song := range msg.Songs {
 			items[i] = searchItem{song: song}
 		}
 		m.resultsList.SetItems(items)
 		return m, nil
-	case searchErrorMsg:
+	case ports.SearchErrorMsg:
 		m.isLoading = false
-		m.err = msg.err
+		m.err = msg.Err
 		return m, nil
 	}
 
@@ -141,7 +147,7 @@ func (m SearchModel) Update(msg tea.Msg) (SearchModel, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "esc":
-			return m, func() tea.Msg { return changeFocusMsg{newFocus: globalFocus} }
+			return m, func() tea.Msg { return ports.ChangeFocusMsg{NewFocus: ports.GlobalFocus} }
 		case "tab":
 			if m.focus == inputFocus {
 				m.focus = listFocus
@@ -159,7 +165,6 @@ func (m SearchModel) Update(msg tea.Msg) (SearchModel, tea.Cmd) {
 		switch key := msg.(type) {
 		case tea.KeyMsg:
 			if key.String() == "enter" {
-				// CORRECCIÓN: Prevenir búsquedas concurrentes.
 				if m.isLoading || m.textInput.Value() == "" {
 					return m, nil
 				}
@@ -178,7 +183,7 @@ func (m SearchModel) Update(msg tea.Msg) (SearchModel, tea.Cmd) {
 		case tea.KeyMsg:
 			if key.String() == "enter" {
 				if selectedItem, ok := m.resultsList.SelectedItem().(searchItem); ok {
-					return m, func() tea.Msg { return playSongMsg(selectedItem) }
+					return m, func() tea.Msg { return ports.PlaySongMsg{Song: selectedItem.song} }
 				}
 			}
 		}

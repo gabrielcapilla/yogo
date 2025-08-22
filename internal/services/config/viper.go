@@ -34,6 +34,7 @@ func NewViperConfigService() ports.ConfigService {
 
 	viper.SetDefault("cookiesPath", "")
 	viper.SetDefault("historyLimit", 50)
+	viper.SetDefault("searchLimit", 25)
 
 	return &ViperConfigService{}
 }

@@ -59,8 +59,8 @@ func (m *PlayerModel) SetContent(status playerStatus, song domain.Song, err erro
 func (m PlayerModel) Update(msg tea.Msg) (PlayerModel, tea.Cmd) {
 	var cmd tea.Cmd
 	switch msg := msg.(type) {
-	case playerStateUpdateMsg:
-		m.state = msg.state
+	case ports.PlayerStateUpdateMsg:
+		m.state = msg.State
 		if m.state.IsPlaying {
 			m.status = statusPlaying
 		} else if m.status == statusPlaying {

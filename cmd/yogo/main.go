@@ -28,7 +28,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	ytService := youtube.NewYTDLPClient(cfg.CookiesPath)
+	ytService := youtube.NewYoutubeClient(cfg.CookiesPath)
 
 	socketPath := filepath.Join(os.TempDir(), "yogo.sock")
 	playerService := player.NewMpvPlayer(socketPath)

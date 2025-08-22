@@ -19,7 +19,7 @@ const (
 type AppModel struct {
 	width, height  int
 	styles         Styles
-	focus          focusState
+	focus          ports.FocusState
 	activeView     activeView
 	youtubeService ports.YoutubeService
 	playerService  ports.PlayerService
@@ -33,12 +33,12 @@ func InitialModel(ytService ports.YoutubeService, pService ports.PlayerService, 
 	styles := DefaultStyles()
 	return AppModel{
 		styles:         styles,
-		focus:          globalFocus,
+		focus:          ports.GlobalFocus,
 		activeView:     searchView,
 		youtubeService: ytService,
 		playerService:  pService,
 		storageService: sService,
-		search:         NewSearchModel(ytService, styles),
+		search:         NewSearchModel(ytService, cfg, styles),
 		history:        NewHistoryModel(sService, cfg, styles),
 		player:         NewPlayerModel(),
 	}
@@ -46,7 +46,7 @@ func InitialModel(ytService ports.YoutubeService, pService ports.PlayerService, 
 
 func tickCmd() tea.Cmd {
 	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
-		return tickMsg(t)
+		return ports.TickMsg(t)
 	})
 }
 
@@ -54,9 +54,9 @@ func getStreamURLCmd(service ports.YoutubeService, song domain.Song) tea.Cmd {
 	return func() tea.Msg {
 		url, err := service.GetStreamURL(song.ID)
 		if err != nil {
-			return playErrorMsg{err}
+			return ports.PlayErrorMsg{Err: err}
 		}
-		return streamURLFetchedMsg{song: song, url: url}
+		return ports.StreamURLFetchedMsg{Song: song, URL: url}
 	}
 }
 
@@ -74,9 +74,9 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		return m, nil
 
-	case changeFocusMsg:
-		m.focus = msg.newFocus
-		if m.focus == searchFocus {
+	case ports.ChangeFocusMsg:
+		m.focus = msg.NewFocus
+		if m.focus == ports.SearchFocus {
 			if m.activeView == searchView {
 				cmd = m.search.Focus()
 			} else {
@@ -89,51 +89,51 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, cmd)
 		return m, tea.Batch(cmds...)
 
-	case playSongMsg:
-		m.focus = globalFocus
-		m.player.SetContent(statusLoading, msg.song, nil)
-		go m.storageService.AddToHistory(domain.HistoryEntry{Song: msg.song, PlayedAt: time.Now()})
-		cmds = append(cmds, getStreamURLCmd(m.youtubeService, msg.song))
+	case ports.PlaySongMsg:
+		m.focus = ports.GlobalFocus
+		m.player.SetContent(statusLoading, msg.Song, nil)
+		go m.storageService.AddToHistory(domain.HistoryEntry{Song: msg.Song, PlayedAt: time.Now()})
+		cmds = append(cmds, getStreamURLCmd(m.youtubeService, msg.Song))
 
-	case streamURLFetchedMsg:
-		err := m.playerService.Play(msg.url)
+	case ports.StreamURLFetchedMsg:
+		err := m.playerService.Play(msg.URL)
 		if err != nil {
-			m.player.SetContent(statusError, msg.song, err)
+			m.player.SetContent(statusError, msg.Song, err)
 		} else {
-			cmds = append(cmds, func() tea.Msg { return songNowPlayingMsg{song: msg.song} })
+			cmds = append(cmds, func() tea.Msg { return ports.SongNowPlayingMsg{Song: msg.Song} })
 		}
 
-	case songNowPlayingMsg:
-		m.player.SetContent(statusPlaying, msg.song, nil)
+	case ports.SongNowPlayingMsg:
+		m.player.SetContent(statusPlaying, msg.Song, nil)
 
-	case playErrorMsg:
-		m.player.SetContent(statusError, domain.Song{}, msg.err)
+	case ports.PlayErrorMsg:
+		m.player.SetContent(statusError, domain.Song{}, msg.Err)
 
-	case tickMsg:
+	case ports.TickMsg:
 		if m.player.status == statusPlaying || m.player.status == statusPaused {
 			state, err := m.playerService.GetState()
 			if err == nil {
-				cmds = append(cmds, func() tea.Msg { return playerStateUpdateMsg{state} })
+				cmds = append(cmds, func() tea.Msg { return ports.PlayerStateUpdateMsg{State: state} })
 			}
 		}
 		cmds = append(cmds, tickCmd())
 
-	case playerStateUpdateMsg:
+	case ports.PlayerStateUpdateMsg:
 		m.player, cmd = m.player.Update(msg)
 		cmds = append(cmds, cmd)
 
 	case tea.KeyMsg:
-		if m.focus == globalFocus {
+		if m.focus == ports.GlobalFocus {
 			switch msg.String() {
 			case "ctrl+c", "q":
 				return m, tea.Quit
 			case "s":
 				m.activeView = searchView
-				return m, func() tea.Msg { return changeFocusMsg{newFocus: searchFocus} }
+				return m, func() tea.Msg { return ports.ChangeFocusMsg{NewFocus: ports.SearchFocus} }
 			case "h":
 				m.activeView = historyView
 				cmds = append(cmds, m.history.Init())
-				cmds = append(cmds, func() tea.Msg { return changeFocusMsg{newFocus: searchFocus} })
+				cmds = append(cmds, func() tea.Msg { return ports.ChangeFocusMsg{NewFocus: ports.SearchFocus} })
 				return m, tea.Batch(cmds...)
 			case " ":
 				if m.player.status == statusPlaying || m.player.status == statusPaused {
@@ -163,7 +163,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	if m.focus == searchFocus {
+	if m.focus == ports.SearchFocus {
 		switch m.activeView {
 		case searchView:
 			m.search, cmd = m.search.Update(msg)
@@ -211,7 +211,7 @@ func (m AppModel) View() string {
 	var footerContent, footerTitle string
 
 	showPlayer := m.player.status != statusIdle
-	if m.focus == searchFocus {
+	if m.focus == ports.SearchFocus {
 		showPlayer = false
 	}
 
@@ -227,10 +227,10 @@ func (m AppModel) View() string {
 			footerTitle = "history"
 		}
 		footerContent = searchFooterContent
-		if m.focus == searchFocus && internalFocus == inputFocus {
+		if m.focus == ports.SearchFocus && internalFocus == inputFocus {
 			footerPanelStyle = focusedBorderStyle
 			mainPanelStyle = blurredBorderStyle
-		} else if m.focus == searchFocus && internalFocus == listFocus {
+		} else if m.focus == ports.SearchFocus && internalFocus == listFocus {
 			footerPanelStyle = blurredBorderStyle
 			mainPanelStyle = focusedBorderStyle
 		} else {
