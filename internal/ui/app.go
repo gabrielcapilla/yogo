@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"time"
 	"yogo/internal/domain"
 	"yogo/internal/ports"
@@ -21,6 +22,7 @@ type AppModel struct {
 	styles         Styles
 	focus          ports.FocusState
 	activeView     activeView
+	config         domain.Config
 	youtubeService ports.YoutubeService
 	playerService  ports.PlayerService
 	storageService ports.StorageService
@@ -35,6 +37,7 @@ func InitialModel(ytService ports.YoutubeService, pService ports.PlayerService, 
 		styles:         styles,
 		focus:          ports.GlobalFocus,
 		activeView:     searchView,
+		config:         cfg,
 		youtubeService: ytService,
 		playerService:  pService,
 		storageService: sService,
@@ -44,24 +47,24 @@ func InitialModel(ytService ports.YoutubeService, pService ports.PlayerService, 
 	}
 }
 
+func (m *AppModel) savePositionAndQuit() tea.Cmd {
+	if m.config.Playback.SavePositionOnQuit && (m.player.status == statusPlaying || m.player.status == statusPaused) {
+		state, err := m.playerService.GetState()
+		if err == nil && state.Position > 0 {
+			m.storageService.UpdateHistoryEntryPosition(m.player.song.ID, int(state.Position))
+		}
+	}
+	return tea.Quit
+}
+
 func tickCmd() tea.Cmd {
 	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
 		return ports.TickMsg(t)
 	})
 }
 
-func getStreamURLCmd(service ports.YoutubeService, song domain.Song) tea.Cmd {
-	return func() tea.Msg {
-		url, err := service.GetStreamURL(song.ID)
-		if err != nil {
-			return ports.PlayErrorMsg{Err: err}
-		}
-		return ports.StreamURLFetchedMsg{Song: song, URL: url}
-	}
-}
-
 func (m AppModel) Init() tea.Cmd {
-	return tea.Batch(m.search.Init(), tickCmd())
+	return tea.Batch(m.search.Init(), m.history.Init(), tickCmd())
 }
 
 func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -92,16 +95,25 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ports.PlaySongMsg:
 		m.focus = ports.GlobalFocus
 		m.player.SetContent(statusLoading, msg.Song, nil)
-		go m.storageService.AddToHistory(domain.HistoryEntry{Song: msg.Song, PlayedAt: time.Now()})
-		cmds = append(cmds, getStreamURLCmd(m.youtubeService, msg.Song))
 
-	case ports.StreamURLFetchedMsg:
-		err := m.playerService.Play(msg.URL)
+		var resumeAt int
+		if m.config.Playback.SavePositionOnQuit {
+			resumeAt = m.history.GetResumeAt(msg.Song.ID)
+		}
+
+		youtubeURL := fmt.Sprintf("https://www.youtube.com/watch?v=%s", msg.Song.ID)
+		if resumeAt > 0 {
+			youtubeURL = fmt.Sprintf("%s&t=%ds", youtubeURL, resumeAt)
+		}
+
+		err := m.playerService.Play(youtubeURL)
 		if err != nil {
-			m.player.SetContent(statusError, msg.Song, err)
+			cmds = append(cmds, func() tea.Msg { return ports.PlayErrorMsg{Err: err} })
 		} else {
 			cmds = append(cmds, func() tea.Msg { return ports.SongNowPlayingMsg{Song: msg.Song} })
 		}
+
+		go m.storageService.AddToHistory(domain.HistoryEntry{Song: msg.Song})
 
 	case ports.SongNowPlayingMsg:
 		m.player.SetContent(statusPlaying, msg.Song, nil)
@@ -126,7 +138,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.focus == ports.GlobalFocus {
 			switch msg.String() {
 			case "ctrl+c", "q":
-				return m, tea.Quit
+				return m, m.savePositionAndQuit()
 			case "s":
 				m.activeView = searchView
 				return m, func() tea.Msg { return ports.ChangeFocusMsg{NewFocus: ports.SearchFocus} }

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os/exec"
+	"regexp"
 	"strings"
 	"yogo/internal/domain"
 	"yogo/internal/logger"
@@ -17,7 +18,10 @@ import (
 	"github.com/buger/jsonparser"
 )
 
-var execCommand = exec.Command
+var (
+	execCommand      = exec.Command
+	initialDataRegex = regexp.MustCompile(`var ytInitialData = (.*?);`)
+)
 
 type YoutubeClient struct {
 	cookiesPath string
@@ -35,7 +39,6 @@ func (c *YoutubeClient) Search(query string, limit int) ([]domain.Song, error) {
 	if strings.HasPrefix(query, "http") {
 		return c.getSongInfoFromURL(query)
 	}
-
 	return c.scrapeSearchResults(query, limit)
 }
 
@@ -117,18 +120,20 @@ func (c *YoutubeClient) scrapeSearchResults(query string, limit int) ([]domain.S
 	return songs, nil
 }
 
+type ytdlpSingleEntry struct {
+	ID       string `json:"id"`
+	Title    string `json:"title"`
+	Uploader string `json:"uploader"`
+	Channel  string `json:"channel"`
+}
+
 func (c *YoutubeClient) getSongInfoFromURL(url string) ([]domain.Song, error) {
 	output, err := c.executeYTDLP("--dump-single-json", "--", url)
 	if err != nil {
 		return nil, err
 	}
 
-	var entry struct {
-		ID       string `json:"id"`
-		Title    string `json:"title"`
-		Uploader string `json:"uploader"`
-		Channel  string `json:"channel"`
-	}
+	var entry ytdlpSingleEntry
 	if err := json.Unmarshal(output, &entry); err != nil {
 		return nil, err
 	}
@@ -145,21 +150,15 @@ func (c *YoutubeClient) getSongInfoFromURL(url string) ([]domain.Song, error) {
 	return []domain.Song{song}, nil
 }
 
-func (c *YoutubeClient) GetStreamURL(songID string) (string, error) {
-	logger.Log.Info().Str("song_id", songID).Msg("Getting stream URL via yt-dlp")
-
-	args := []string{"-f", "bestaudio/best", "-g", "--", songID}
-	output, err := c.executeYTDLP(args...)
+func (c *YoutubeClient) GetSongInfo(url string) (domain.Song, error) {
+	songs, err := c.getSongInfoFromURL(url)
 	if err != nil {
-		return "", err
+		return domain.Song{}, err
 	}
-
-	url := strings.TrimSpace(string(output))
-	if url == "" {
-		return "", fmt.Errorf("yt-dlp returned no URL for ID %s", songID)
+	if len(songs) == 0 {
+		return domain.Song{}, errors.New("no song info found for url")
 	}
-
-	return strings.Split(url, "\n")[0], nil
+	return songs[0], nil
 }
 
 func (c *YoutubeClient) executeYTDLP(args ...string) ([]byte, error) {

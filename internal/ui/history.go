@@ -17,6 +17,8 @@ import (
 type historyItem struct{ entry domain.HistoryEntry }
 
 func (i historyItem) FilterValue() string { return i.entry.Song.Title }
+func (i historyItem) SongID() string      { return i.entry.Song.ID }
+func (i historyItem) ResumeAt() int       { return i.entry.ResumeAt }
 
 type historyItemDelegate struct{ styles Styles }
 
@@ -83,6 +85,17 @@ func NewHistoryModel(service ports.StorageService, cfg domain.Config, styles Sty
 		resultsList:    li,
 		spinner:        s,
 	}
+}
+
+func (m *HistoryModel) GetResumeAt(songID string) int {
+	for _, item := range m.fullHistory {
+		if hi, ok := item.(historyItem); ok {
+			if hi.SongID() == songID {
+				return hi.ResumeAt()
+			}
+		}
+	}
+	return 0
 }
 
 func (m *HistoryModel) loadHistory() tea.Msg {

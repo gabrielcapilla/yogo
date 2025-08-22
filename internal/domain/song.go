@@ -11,4 +11,5 @@ type Song struct {
 type HistoryEntry struct {
 	Song     Song
 	PlayedAt time.Time
+	ResumeAt int
 }

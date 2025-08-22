@@ -148,13 +148,12 @@ func (p *MpvPlayer) sendCommands(cmds ...MpvCommand) ([]MpvResponse, error) {
 	return responses, nil
 }
 
-func (p *MpvPlayer) Play(url string) error {
+func (p *MpvPlayer) Play(mediaURL string) error {
 	if err := p.startMpvProcess(); err != nil {
 		return err
 	}
-	disableVideoCmd := MpvCommand{Command: []any{"set_property", "vid", "no"}}
-	loadFileCmd := MpvCommand{Command: []any{"loadfile", url, "replace"}}
-	_, err := p.sendCommands(disableVideoCmd, loadFileCmd)
+	loadFileCmd := MpvCommand{Command: []any{"loadfile", mediaURL, "replace"}}
+	_, err := p.sendCommands(loadFileCmd)
 	return err
 }
 

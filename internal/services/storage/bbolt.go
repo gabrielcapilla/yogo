@@ -39,9 +39,9 @@ func NewBboltStore(dbPath string) (ports.StorageService, error) {
 func (s *BboltStore) AddToHistory(entry domain.HistoryEntry) error {
 	return s.db.Update(func(tx *bbolt.Tx) error {
 		b := tx.Bucket(historyBucket)
-
 		key := []byte(entry.Song.ID)
 
+		entry.ResumeAt = 0
 		entry.PlayedAt = time.Now()
 
 		value, err := json.Marshal(entry)
@@ -50,6 +50,33 @@ func (s *BboltStore) AddToHistory(entry domain.HistoryEntry) error {
 		}
 
 		return b.Put(key, value)
+	})
+}
+
+func (s *BboltStore) UpdateHistoryEntryPosition(songID string, position int) error {
+	return s.db.Update(func(tx *bbolt.Tx) error {
+		b := tx.Bucket(historyBucket)
+		key := []byte(songID)
+
+		val := b.Get(key)
+		if val == nil {
+			return nil
+		}
+
+		var entry domain.HistoryEntry
+		if err := json.Unmarshal(val, &entry); err != nil {
+			return err
+		}
+
+		entry.ResumeAt = position
+		entry.PlayedAt = time.Now()
+
+		newValue, err := json.Marshal(entry)
+		if err != nil {
+			return err
+		}
+
+		return b.Put(key, newValue)
 	})
 }
 

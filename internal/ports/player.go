@@ -8,7 +8,7 @@ type PlayerState struct {
 }
 
 type PlayerService interface {
-	Play(url string) error
+	Play(mediaURL string) error
 	Pause() error
 	Stop() error
 	Seek(seconds int) error
