@@ -44,7 +44,6 @@ func NewPlayerModel() PlayerModel {
 
 func (m *PlayerModel) SetSize(w int) {
 	m.width = w
-	m.progress.Width = w - 4 - (len("00:00") * 2)
 }
 
 func (m *PlayerModel) SetContent(status playerStatus, song domain.Song, err error) {
@@ -90,9 +89,31 @@ func formatDuration(seconds float64) string {
 	s := int(d.Seconds()) % 60
 
 	if h > 0 {
-		return fmt.Sprintf("%02d:%02d:%02d", h, m, s)
+		return fmt.Sprintf("%d:%02d:%02d", h, m, s)
 	}
 	return fmt.Sprintf("%02d:%02d", m, s)
+}
+
+func (m PlayerModel) ViewTitle() string {
+	playPauseSymbol := "▶"
+	if m.state.IsPlaying {
+		playPauseSymbol = "Ⅱ"
+	}
+
+	speed := 1.0
+	if m.state.Speed > 0 {
+		speed = m.state.Speed
+	}
+	var speedStr string
+	if speed == float64(int64(speed)) {
+		speedStr = fmt.Sprintf("x%d", int64(speed))
+	} else {
+		speedStr = fmt.Sprintf("x%.2f", speed)
+	}
+
+	controls := fmt.Sprintf("« %s »", playPauseSymbol)
+
+	return fmt.Sprintf("Player | %s | %s", controls, speedStr)
 }
 
 func (m PlayerModel) View() string {
@@ -118,6 +139,15 @@ func (m PlayerModel) View() string {
 
 		posStr := formatDuration(m.state.Position)
 		durStr := formatDuration(m.state.Duration)
+
+		availableWidth := m.width - 2
+
+		timeWidth := lipgloss.Width(posStr) + lipgloss.Width(durStr) + 2
+		progressBarWidth := availableWidth - timeWidth
+		if progressBarWidth < 1 {
+			progressBarWidth = 1
+		}
+		m.progress.Width = progressBarWidth
 
 		progressView := lipgloss.JoinHorizontal(lipgloss.Center,
 			posStr,

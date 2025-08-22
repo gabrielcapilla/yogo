@@ -1,5 +1,7 @@
+// internal/ui/search.go
 package ui
 
+// ... (imports y structs sin cambios) ...
 import (
 	"fmt"
 	"io"
@@ -61,6 +63,7 @@ type SearchModel struct {
 	err            error
 }
 
+// ... (NewSearchModel y otros métodos sin cambios) ...
 func NewSearchModel(service ports.YoutubeService, styles Styles) SearchModel {
 	ti := textinput.New()
 	ti.Placeholder = "Search for a song..."
@@ -156,6 +159,10 @@ func (m SearchModel) Update(msg tea.Msg) (SearchModel, tea.Cmd) {
 		switch key := msg.(type) {
 		case tea.KeyMsg:
 			if key.String() == "enter" {
+				// CORRECCIÓN: Prevenir búsquedas concurrentes.
+				if m.isLoading || m.textInput.Value() == "" {
+					return m, nil
+				}
 				m.isLoading = true
 				m.err = nil
 				m.resultsList.SetItems([]list.Item{})

@@ -147,6 +147,18 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.player.status == statusPlaying || m.player.status == statusPaused {
 					m.playerService.Seek(-5)
 				}
+			case "]":
+				if m.player.status == statusPlaying || m.player.status == statusPaused {
+					m.playerService.ChangeSpeed(0.25)
+				}
+			case "[":
+				if m.player.status == statusPlaying || m.player.status == statusPaused {
+					m.playerService.ChangeSpeed(-0.25)
+				}
+			case `\`:
+				if m.player.status == statusPlaying || m.player.status == statusPaused {
+					m.playerService.ResetSpeed()
+				}
 			}
 		}
 	}
@@ -204,7 +216,7 @@ func (m AppModel) View() string {
 	}
 
 	if showPlayer {
-		footerTitle = "player"
+		footerTitle = m.player.ViewTitle()
 		footerContent = playerFooterContent
 		footerPanelStyle = focusedBorderStyle
 		mainPanelStyle = blurredBorderStyle

@@ -125,7 +125,7 @@ func (m HistoryModel) Update(msg tea.Msg) (HistoryModel, tea.Cmd) {
 		for i, entry := range msg.entries {
 			items[i] = historyItem{entry: entry}
 		}
-		m.fullHistory = items // Guardar en la lista maestra
+		m.fullHistory = items
 		m.resultsList.SetItems(items)
 		return m, nil
 	case historyErrorMsg:

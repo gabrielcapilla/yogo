@@ -20,6 +20,7 @@ const (
 	mpvCommandReqIDPause = 1
 	mpvCommandReqIDPos   = 2
 	mpvCommandReqIDDur   = 3
+	mpvCommandReqIDSpeed = 4
 )
 
 type MpvCommand struct {
@@ -125,9 +126,6 @@ func (p *MpvPlayer) sendCommands(cmds ...MpvCommand) ([]MpvResponse, error) {
 
 		if resp.Event == "" && resp.RequestID > 0 {
 			responses = append(responses, resp)
-			logger.Log.Debug().RawJSON("response", line).Msg("Processed mpv command response")
-		} else {
-			logger.Log.Debug().RawJSON("event", line).Msg("Ignored mpv event")
 		}
 	}
 	return responses, nil
@@ -137,7 +135,6 @@ func (p *MpvPlayer) Play(url string) error {
 	if err := p.startMpvProcess(); err != nil {
 		return err
 	}
-
 	disableVideoCmd := MpvCommand{Command: []any{"set_property", "vid", "no"}}
 	loadFileCmd := MpvCommand{Command: []any{"loadfile", url, "replace"}}
 	_, err := p.sendCommands(disableVideoCmd, loadFileCmd)
@@ -177,10 +174,29 @@ func (p *MpvPlayer) Seek(seconds int) error {
 	return err
 }
 
-func (p *MpvPlayer) GetState() (ports.PlayerState, error) {
+func (p *MpvPlayer) ChangeSpeed(delta float64) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if !p.isProcessRunning() {
+		return nil
+	}
+	cmd := MpvCommand{Command: []any{"add", "speed", delta}}
+	_, err := p.sendCommands(cmd)
+	return err
+}
 
+func (p *MpvPlayer) ResetSpeed() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !p.isProcessRunning() {
+		return nil
+	}
+	cmd := MpvCommand{Command: []any{"set_property", "speed", 1.0}}
+	_, err := p.sendCommands(cmd)
+	return err
+}
+
+func (p *MpvPlayer) getState_unsafe() (ports.PlayerState, error) {
 	state := ports.PlayerState{}
 	if !p.isProcessRunning() {
 		return state, nil
@@ -189,14 +205,11 @@ func (p *MpvPlayer) GetState() (ports.PlayerState, error) {
 	pauseCmd := MpvCommand{Command: []any{"get_property", "pause"}, RequestID: mpvCommandReqIDPause}
 	posCmd := MpvCommand{Command: []any{"get_property", "time-pos"}, RequestID: mpvCommandReqIDPos}
 	durCmd := MpvCommand{Command: []any{"get_property", "duration"}, RequestID: mpvCommandReqIDDur}
+	speedCmd := MpvCommand{Command: []any{"get_property", "speed"}, RequestID: mpvCommandReqIDSpeed}
 
-	responses, err := p.sendCommands(pauseCmd, posCmd, durCmd)
+	responses, err := p.sendCommands(pauseCmd, posCmd, durCmd, speedCmd)
 	if err != nil {
 		return state, err
-	}
-
-	if len(responses) < 3 {
-		logger.Log.Warn().Int("received_count", len(responses)).Int("expected_count", 3).Msg("Unexpected number of responses from GetState")
 	}
 
 	for _, resp := range responses {
@@ -216,23 +229,29 @@ func (p *MpvPlayer) GetState() (ports.PlayerState, error) {
 			if dur, ok := resp.Data.(float64); ok {
 				state.Duration = dur
 			}
+		case mpvCommandReqIDSpeed:
+			if speed, ok := resp.Data.(float64); ok {
+				state.Speed = speed
+			}
 		}
 	}
 	return state, nil
 }
 
+func (p *MpvPlayer) GetState() (ports.PlayerState, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.getState_unsafe()
+}
+
 func (p *MpvPlayer) Close() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-
-	logger.Log.Info().Msg("Closing player service...")
 	if p.isProcessRunning() {
-		logger.Log.Info().Msg("Terminating mpv process...")
 		if err := p.cmd.Process.Kill(); err != nil {
 			logger.Log.Error().Err(err).Msg("Error terminating mpv process")
 		}
 	}
 	os.Remove(p.socketPath)
-	logger.Log.Info().Msg("Player service closed.")
 	return nil
 }
