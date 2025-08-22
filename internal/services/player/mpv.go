@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"sync"
 	"time"
+	"yogo/internal/domain"
 	"yogo/internal/logger"
 	"yogo/internal/ports"
 )
@@ -39,11 +40,15 @@ type MpvPlayer struct {
 	socketPath string
 	cmd        *exec.Cmd
 	mu         sync.Mutex
+	config     domain.PlaybackConfig
 }
 
-func NewMpvPlayer(socketPath string) ports.PlayerService {
+func NewMpvPlayer(socketPath string, cfg domain.Config) ports.PlayerService {
 	os.Remove(socketPath)
-	return &MpvPlayer{socketPath: socketPath}
+	return &MpvPlayer{
+		socketPath: socketPath,
+		config:     cfg.Playback,
+	}
 }
 
 func (p *MpvPlayer) isProcessRunning() bool {
@@ -67,7 +72,19 @@ func (p *MpvPlayer) startMpvProcess() error {
 		"--idle",
 		"--input-ipc-server=" + p.socketPath,
 		"--no-video",
+		"--no-config",
 	}
+
+	if p.config.Loop {
+		args = append(args, "--loop-file=yes")
+	} else {
+		args = append(args, "--loop-file=no")
+	}
+
+	if p.config.SavePositionOnQuit {
+		args = append(args, "--save-position-on-quit")
+	}
+
 	p.cmd = exec.Command("mpv", args...)
 	p.cmd.Stdout = logger.Log
 	p.cmd.Stderr = logger.Log

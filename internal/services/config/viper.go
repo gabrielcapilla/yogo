@@ -33,8 +33,10 @@ func NewViperConfigService() ports.ConfigService {
 	viper.AddConfigPath(".")
 
 	viper.SetDefault("cookiesPath", "")
-	viper.SetDefault("historyLimit", 50)
-	viper.SetDefault("searchLimit", 25)
+	viper.SetDefault("historyLimit", 16)
+	viper.SetDefault("searchLimit", 16)
+	viper.SetDefault("playback.loop", true)
+	viper.SetDefault("playback.savePositionOnQuit", true)
 
 	return &ViperConfigService{}
 }
