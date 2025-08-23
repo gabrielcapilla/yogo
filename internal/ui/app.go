@@ -113,7 +113,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if err != nil {
 			cmds = append(cmds, func() tea.Msg { return ports.PlayErrorMsg{Err: err} })
 		} else {
-			cmds = append(cmds, func() tea.Msg { return ports.SongNowPlayingMsg{Song: msg.Song} })
+			cmds = append(cmds, func() tea.Msg { return ports.SongNowPlayingMsg(msg) })
 		}
 
 		go m.storageService.AddToHistory(domain.HistoryEntry{Song: msg.Song})
