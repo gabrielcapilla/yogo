@@ -20,7 +20,7 @@ import (
 
 var (
 	execCommand      = exec.Command
-	initialDataRegex = regexp.MustCompile(`var ytInitialData = (.*?);`)
+	initialDataRegex = regexp.MustCompile(`(?:var\s*ytInitialData|window\["ytInitialData"\])\s*=\s*(.*?);</script>`)
 )
 
 type YoutubeClient struct {
@@ -58,7 +58,7 @@ func (c *YoutubeClient) scrapeSearchResults(query string, limit int) ([]domain.S
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("youtube returned non-200 status code: %d", resp.StatusCode)
 	}
 
@@ -67,16 +67,11 @@ func (c *YoutubeClient) scrapeSearchResults(query string, limit int) ([]domain.S
 		return nil, err
 	}
 
-	htmlBody := string(body)
-	splittedScript := strings.Split(htmlBody, `var ytInitialData = `)
-	if len(splittedScript) < 2 {
-		splittedScript = strings.Split(htmlBody, `window["ytInitialData"] = `)
-	}
-	if len(splittedScript) < 2 {
+	matches := initialDataRegex.FindSubmatch(body)
+	if len(matches) < 2 {
 		return nil, errors.New("could not find ytInitialData script block")
 	}
-	jsonBlock := strings.Split(splittedScript[1], `;</script>`)[0]
-	jsonData := []byte(jsonBlock)
+	jsonData := matches[1]
 
 	contentRoot, _, _, err := jsonparser.Get(jsonData, "contents", "twoColumnSearchResultsRenderer", "primaryContents", "sectionListRenderer", "contents")
 	if err != nil {

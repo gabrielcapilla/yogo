@@ -1,11 +1,11 @@
 package storage
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
-	"sort"
+	"strings"
 	"time"
-
 	"yogo/internal/domain"
 	"yogo/internal/ports"
 
@@ -36,13 +36,35 @@ func NewBboltStore(dbPath string) (ports.StorageService, error) {
 	return &BboltStore{db: db}, nil
 }
 
+func (s *BboltStore) createHistoryKey(t time.Time, songID string) []byte {
+	return []byte(fmt.Sprintf("%s:%s", t.UTC().Format(time.RFC3339Nano), songID))
+}
+
+func (s *BboltStore) findAndDeleteOldEntry(b *bbolt.Bucket, songID string) error {
+	c := b.Cursor()
+	prefix := []byte(":")
+	idBytes := []byte(songID)
+
+	for k, _ := c.First(); k != nil; k, _ = c.Next() {
+		parts := bytes.Split(k, prefix)
+		if len(parts) == 2 && bytes.Equal(parts[1], idBytes) {
+			return c.Delete()
+		}
+	}
+	return nil
+}
+
 func (s *BboltStore) AddToHistory(entry domain.HistoryEntry) error {
 	return s.db.Update(func(tx *bbolt.Tx) error {
 		b := tx.Bucket(historyBucket)
-		key := []byte(entry.Song.ID)
+
+		if err := s.findAndDeleteOldEntry(b, entry.Song.ID); err != nil {
+			return err
+		}
 
 		entry.ResumeAt = 0
 		entry.PlayedAt = time.Now()
+		key := s.createHistoryKey(entry.PlayedAt, entry.Song.ID)
 
 		value, err := json.Marshal(entry)
 		if err != nil {
@@ -56,27 +78,39 @@ func (s *BboltStore) AddToHistory(entry domain.HistoryEntry) error {
 func (s *BboltStore) UpdateHistoryEntryPosition(songID string, position int) error {
 	return s.db.Update(func(tx *bbolt.Tx) error {
 		b := tx.Bucket(historyBucket)
-		key := []byte(songID)
 
-		val := b.Get(key)
-		if val == nil {
+		var oldEntry domain.HistoryEntry
+		var oldKey []byte
+
+		c := b.Cursor()
+		for k, v := c.First(); k != nil; k, v = c.Next() {
+			if strings.HasSuffix(string(k), songID) {
+				if err := json.Unmarshal(v, &oldEntry); err != nil {
+					return err
+				}
+				oldKey = k
+				break
+			}
+		}
+
+		if oldKey == nil {
 			return nil
 		}
 
-		var entry domain.HistoryEntry
-		if err := json.Unmarshal(val, &entry); err != nil {
+		if err := b.Delete(oldKey); err != nil {
 			return err
 		}
 
-		entry.ResumeAt = position
-		entry.PlayedAt = time.Now()
+		oldEntry.ResumeAt = position
+		oldEntry.PlayedAt = time.Now()
+		newKey := s.createHistoryKey(oldEntry.PlayedAt, songID)
 
-		newValue, err := json.Marshal(entry)
+		newValue, err := json.Marshal(oldEntry)
 		if err != nil {
 			return err
 		}
 
-		return b.Put(key, newValue)
+		return b.Put(newKey, newValue)
 	})
 }
 
@@ -85,27 +119,20 @@ func (s *BboltStore) GetHistory(limit int) ([]domain.HistoryEntry, error) {
 
 	err := s.db.View(func(tx *bbolt.Tx) error {
 		b := tx.Bucket(historyBucket)
+		c := b.Cursor()
 
-		return b.ForEach(func(k, v []byte) error {
+		for k, v := c.Last(); k != nil && len(entries) < limit; k, v = c.Prev() {
 			var entry domain.HistoryEntry
 			if err := json.Unmarshal(v, &entry); err != nil {
 				return fmt.Errorf("error deserializing history entry: %w", err)
 			}
 			entries = append(entries, entry)
-			return nil
-		})
+		}
+		return nil
 	})
 
 	if err != nil {
 		return nil, err
-	}
-
-	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].PlayedAt.After(entries[j].PlayedAt)
-	})
-
-	if len(entries) > limit {
-		return entries[:limit], nil
 	}
 
 	return entries, nil

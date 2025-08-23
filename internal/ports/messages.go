@@ -9,8 +9,7 @@ type FocusState int
 
 const (
 	GlobalFocus FocusState = iota
-	SearchFocus
-	HistoryFocus
+	ComponentFocus
 )
 
 type ChangeFocusMsg struct{ NewFocus FocusState }

@@ -23,11 +23,10 @@ type AppModel struct {
 	focus          ports.FocusState
 	activeView     activeView
 	config         domain.Config
-	youtubeService ports.YoutubeService
 	playerService  ports.PlayerService
 	storageService ports.StorageService
-	search         SearchModel
-	history        HistoryModel
+	search         listAndFilterModel
+	history        listAndFilterModel
 	player         PlayerModel
 }
 
@@ -38,7 +37,6 @@ func InitialModel(ytService ports.YoutubeService, pService ports.PlayerService, 
 		focus:          ports.GlobalFocus,
 		activeView:     searchView,
 		config:         cfg,
-		youtubeService: ytService,
 		playerService:  pService,
 		storageService: sService,
 		search:         NewSearchModel(ytService, cfg, styles),
@@ -79,12 +77,14 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case ports.ChangeFocusMsg:
 		m.focus = msg.NewFocus
-		if m.focus == ports.SearchFocus {
+		if m.focus == ports.ComponentFocus {
+			var activeComponent *listAndFilterModel
 			if m.activeView == searchView {
-				cmd = m.search.Focus()
+				activeComponent = &m.search
 			} else {
-				cmd = m.history.Focus()
+				activeComponent = &m.history
 			}
+			cmd = activeComponent.Focus()
 		} else {
 			m.search.Blur()
 			m.history.Blur()
@@ -98,7 +98,9 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		var resumeAt int
 		if m.config.Playback.SavePositionOnQuit {
-			resumeAt = m.history.GetResumeAt(msg.Song.ID)
+			if hi, ok := m.history.GetItem(msg.Song.ID).(historyItem); ok {
+				resumeAt = hi.ResumeAt()
+			}
 		}
 
 		youtubeURL := fmt.Sprintf("https://www.youtube.com/watch?v=%s", msg.Song.ID)
@@ -141,11 +143,11 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.savePositionAndQuit()
 			case "s":
 				m.activeView = searchView
-				return m, func() tea.Msg { return ports.ChangeFocusMsg{NewFocus: ports.SearchFocus} }
+				return m, func() tea.Msg { return ports.ChangeFocusMsg{NewFocus: ports.ComponentFocus} }
 			case "h":
 				m.activeView = historyView
 				cmds = append(cmds, m.history.Init())
-				cmds = append(cmds, func() tea.Msg { return ports.ChangeFocusMsg{NewFocus: ports.SearchFocus} })
+				cmds = append(cmds, func() tea.Msg { return ports.ChangeFocusMsg{NewFocus: ports.ComponentFocus} })
 				return m, tea.Batch(cmds...)
 			case " ":
 				if m.player.status == statusPlaying || m.player.status == statusPaused {
@@ -175,15 +177,17 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	if m.focus == ports.SearchFocus {
-		switch m.activeView {
-		case searchView:
-			m.search, cmd = m.search.Update(msg)
-		case historyView:
-			m.history, cmd = m.history.Update(msg)
+	if m.focus == ports.ComponentFocus {
+		var activeComponent *listAndFilterModel
+		if m.activeView == searchView {
+			activeComponent = &m.search
+		} else {
+			activeComponent = &m.history
 		}
+		*activeComponent, cmd = activeComponent.Update(msg)
 		cmds = append(cmds, cmd)
 	}
+
 	m.player, cmd = m.player.Update(msg)
 	cmds = append(cmds, cmd)
 
@@ -201,29 +205,24 @@ func (m AppModel) View() string {
 	footerHeight := 4
 	mainPanelHeight := appHeight - footerHeight
 
-	m.search.SetSize(appWidth, mainPanelHeight)
-	m.history.SetSize(appWidth, mainPanelHeight)
+	var activeComponent *listAndFilterModel
+	if m.activeView == searchView {
+		activeComponent = &m.search
+	} else {
+		activeComponent = &m.history
+	}
+	activeComponent.SetSize(appWidth, mainPanelHeight)
 	m.player.SetSize(appWidth)
 
-	var mainContent, searchFooterContent string
-	var internalFocus searchComponentFocus
-
-	switch m.activeView {
-	case searchView:
-		mainContent, searchFooterContent = m.search.View()
-		internalFocus = m.search.GetFocus()
-	case historyView:
-		mainContent, searchFooterContent = m.history.View()
-		internalFocus = m.history.GetFocus()
-	}
-
+	mainContent, footerContent := activeComponent.View()
+	internalFocus := activeComponent.GetFocus()
 	playerFooterContent := m.player.View()
 
 	var mainPanelStyle, footerPanelStyle lipgloss.Style
-	var footerContent, footerTitle string
+	var footerTitle string
 
 	showPlayer := m.player.status != statusIdle
-	if m.focus == ports.SearchFocus {
+	if m.focus == ports.ComponentFocus {
 		showPlayer = false
 	}
 
@@ -233,21 +232,13 @@ func (m AppModel) View() string {
 		footerPanelStyle = focusedBorderStyle
 		mainPanelStyle = blurredBorderStyle
 	} else {
-		if m.activeView == searchView {
-			footerTitle = "search"
-		} else {
-			footerTitle = "history"
-		}
-		footerContent = searchFooterContent
-		if m.focus == ports.SearchFocus && internalFocus == inputFocus {
+		footerTitle = activeComponent.title
+		if internalFocus == inputFocus {
 			footerPanelStyle = focusedBorderStyle
 			mainPanelStyle = blurredBorderStyle
-		} else if m.focus == ports.SearchFocus && internalFocus == listFocus {
-			footerPanelStyle = blurredBorderStyle
-			mainPanelStyle = focusedBorderStyle
 		} else {
 			footerPanelStyle = blurredBorderStyle
-			mainPanelStyle = blurredBorderStyle
+			mainPanelStyle = focusedBorderStyle
 		}
 	}
 

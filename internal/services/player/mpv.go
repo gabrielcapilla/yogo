@@ -212,7 +212,7 @@ func (p *MpvPlayer) ResetSpeed() error {
 	return err
 }
 
-func (p *MpvPlayer) getState_unsafe() (ports.PlayerState, error) {
+func (p *MpvPlayer) getStateUnsafe() (ports.PlayerState, error) {
 	state := ports.PlayerState{}
 	if !p.isProcessRunning() {
 		return state, nil
@@ -257,7 +257,7 @@ func (p *MpvPlayer) getState_unsafe() (ports.PlayerState, error) {
 func (p *MpvPlayer) GetState() (ports.PlayerState, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return p.getState_unsafe()
+	return p.getStateUnsafe()
 }
 
 func (p *MpvPlayer) Close() error {
