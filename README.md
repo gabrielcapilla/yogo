@@ -5,7 +5,7 @@ A terminal-based YouTube music player built with Go. Search, play, and manage yo
 ## Features
 
 - **Search**: Find songs directly from your terminal
-- **Play Music**: Stream YouTube videos as audio with mpv
+- **Play Music**: Stream YouTube videos as audio
 - **History**: Keep track of recently played songs
 - **Controls**: Play/pause, seek, and speed controls
 - **Resume Playback**: Continue from where you left off
