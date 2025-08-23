@@ -79,7 +79,7 @@ func (c *YoutubeClient) scrapeSearchResults(query string, limit int) ([]domain.S
 	}
 
 	var resultsContents []byte
-	jsonparser.ArrayEach(contentRoot, func(contentBlock []byte, dataType jsonparser.ValueType, offset int, err error) {
+	jsonparser.ArrayEach(contentRoot, func(contentBlock []byte, dataType jsonparser.ValueType, offset int, _ error) {
 		contents, _, _, err := jsonparser.Get(contentBlock, "itemSectionRenderer", "contents")
 		if err == nil {
 			resultsContents = contents
@@ -92,7 +92,7 @@ func (c *YoutubeClient) scrapeSearchResults(query string, limit int) ([]domain.S
 
 	var songs []domain.Song
 	count := 0
-	jsonparser.ArrayEach(resultsContents, func(value []byte, dataType jsonparser.ValueType, offset int, err error) {
+	jsonparser.ArrayEach(resultsContents, func(value []byte, dataType jsonparser.ValueType, offset int, _ error) {
 		if count >= limit {
 			return
 		}
