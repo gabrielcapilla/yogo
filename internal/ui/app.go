@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 	"yogo/internal/domain"
+	"yogo/internal/logger"
 	"yogo/internal/ports"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -116,6 +117,20 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		go m.storageService.AddToHistory(domain.HistoryEntry{Song: msg.Song})
+
+	case ports.DeleteFromHistoryMsg:
+		var deleteCmds []tea.Cmd
+		for _, id := range msg.SongIDs {
+			songID := id
+			deleteCmds = append(deleteCmds, func() tea.Msg {
+				err := m.storageService.DeleteFromHistory(songID)
+				if err != nil {
+					logger.Log.Error().Err(err).Str("songID", songID).Msg("Failed to delete history entry")
+				}
+				return nil
+			})
+		}
+		cmds = append(cmds, tea.Sequence(tea.Batch(deleteCmds...), m.history.Init()))
 
 	case ports.SongNowPlayingMsg:
 		m.player.SetContent(statusPlaying, msg.Song, nil)

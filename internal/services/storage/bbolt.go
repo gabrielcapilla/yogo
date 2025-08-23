@@ -106,6 +106,16 @@ func (s *BboltStore) UpdateHistoryEntryPosition(songID string, position int) err
 	})
 }
 
+func (s *BboltStore) DeleteFromHistory(songID string) error {
+	return s.db.Update(func(tx *bbolt.Tx) error {
+		b := tx.Bucket(historyBucket)
+		if key, _ := s.findOldKeyForSong(b, songID); key != nil {
+			return b.Delete(key)
+		}
+		return nil
+	})
+}
+
 func (s *BboltStore) GetHistory(limit int) ([]domain.HistoryEntry, error) {
 	var entries []domain.HistoryEntry
 

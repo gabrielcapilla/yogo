@@ -19,6 +19,7 @@ type SearchErrorMsg struct{ Err error }
 
 type HistoryLoadedMsg struct{ Entries []domain.HistoryEntry }
 type HistoryErrorMsg struct{ Err error }
+type DeleteFromHistoryMsg struct{ SongIDs []string }
 
 type TickMsg time.Time
 type PlaySongMsg struct{ Song domain.Song }

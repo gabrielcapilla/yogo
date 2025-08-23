@@ -32,70 +32,98 @@ type listDataSource interface {
 }
 
 type listAndFilterModel struct {
-	title       string
-	dataSource  listDataSource
-	styles      Styles
-	focus       componentFocus
-	textInput   textinput.Model
-	resultsList list.Model
-	spinner     spinner.Model
-	isLoading   bool
-	err         error
-	fullList    []list.Item
+	title             string
+	dataSource        listDataSource
+	styles            Styles
+	focus             componentFocus
+	textInput         textinput.Model
+	resultsList       list.Model
+	spinner           spinner.Model
+	isLoading         bool
+	err               error
+	fullList          []list.Item
+	markedForDeletion map[string]struct{}
 }
 
-type itemDelegate struct{ styles Styles }
+type itemDelegate struct {
+	styles            Styles
+	markedForDeletion *map[string]struct{}
+}
 
 func (d itemDelegate) Height() int                               { return 1 }
 func (d itemDelegate) Spacing() int                              { return 0 }
 func (d itemDelegate) Update(msg tea.Msg, m *list.Model) tea.Cmd { return nil }
 func (d itemDelegate) Render(w io.Writer, m list.Model, index int, item list.Item) {
-	style := d.styles.ListNormal
+	listItem, ok := item.(listItem)
+	if !ok {
+		return
+	}
+
+	itemStyle := d.styles.ListNormal
 	pointer := "  "
 	if index == m.Index() {
-		style = d.styles.ListSelected
+		itemStyle = d.styles.ListSelected
 		pointer = d.styles.ListPointer.String()
 	}
 
-	line := item.FilterValue()
+	var lineBuilder strings.Builder
+	if _, isMarked := (*d.markedForDeletion)[listItem.ID()]; isMarked {
+		lineBuilder.WriteString("x ")
+		itemStyle = itemStyle.Strikethrough(true).Faint(true)
+	} else {
+		lineBuilder.WriteString("")
+	}
+
+	lineBuilder.WriteString(listItem.FilterValue())
+	line := lineBuilder.String()
+
 	if m.Width() > 0 {
-		lineWidth := m.Width() - lipgloss.Width(style.Render(pointer))
+		lineWidth := m.Width() - lipgloss.Width(itemStyle.Render(pointer))
 		if len(line) > lineWidth {
 			line = line[:lineWidth-3] + "..."
 		}
 	}
-	fmt.Fprint(w, style.Render(pointer+line))
+	fmt.Fprint(w, itemStyle.Render(pointer+line))
 }
 
 func NewListAndFilterModel(title, placeholder string, source listDataSource, styles Styles) listAndFilterModel {
+	m := listAndFilterModel{
+		title:             title,
+		dataSource:        source,
+		styles:            styles,
+		focus:             inputFocus,
+		markedForDeletion: make(map[string]struct{}),
+	}
+
 	ti := textinput.New()
 	ti.Placeholder = placeholder
 	ti.Prompt = ""
 	ti.PromptStyle = lipgloss.NewStyle()
 	ti.TextStyle = lipgloss.NewStyle()
+	m.textInput = ti
 
-	li := list.New([]list.Item{}, itemDelegate{styles: styles}, 0, 0)
+	delegate := itemDelegate{
+		styles:            styles,
+		markedForDeletion: &m.markedForDeletion,
+	}
+	li := list.New([]list.Item{}, delegate, 0, 0)
 	li.SetShowTitle(false)
 	li.SetShowStatusBar(false)
 	li.SetShowPagination(false)
 	li.SetShowHelp(false)
+	m.resultsList = li
 
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = styles.Spinner
+	m.spinner = s
 
-	return listAndFilterModel{
-		title:       title,
-		dataSource:  source,
-		styles:      styles,
-		focus:       inputFocus,
-		textInput:   ti,
-		resultsList: li,
-		spinner:     s,
-	}
+	return m
 }
 
 func (m *listAndFilterModel) Init() tea.Cmd {
+	m.isLoading = true
+	m.markedForDeletion = make(map[string]struct{})
 	fetchCmd := func() tea.Msg {
 		return m.dataSource.Fetch("")
 	}
@@ -188,21 +216,18 @@ func (m listAndFilterModel) Update(msg tea.Msg) (listAndFilterModel, tea.Cmd) {
 
 		isSearch := m.title == "search"
 		if isSearch {
-			switch key := msg.(type) {
-			case tea.KeyMsg:
-				if key.String() == "enter" {
-					if m.isLoading || m.textInput.Value() == "" {
-						return m, nil
-					}
-					m.isLoading = true
-					m.err = nil
-					m.resultsList.SetItems([]list.Item{})
-					m.focus = listFocus
-					m.textInput.Blur()
-					cmds = append(cmds, func() tea.Msg {
-						return m.dataSource.Fetch(m.textInput.Value())
-					})
+			if key, ok := msg.(tea.KeyMsg); ok && key.String() == "enter" {
+				if m.isLoading || m.textInput.Value() == "" {
+					return m, nil
 				}
+				m.isLoading = true
+				m.err = nil
+				m.resultsList.SetItems([]list.Item{})
+				m.focus = listFocus
+				m.textInput.Blur()
+				cmds = append(cmds, func() tea.Msg {
+					return m.dataSource.Fetch(m.textInput.Value())
+				})
 			}
 		} else {
 			filterTerm := m.textInput.Value()
@@ -220,11 +245,32 @@ func (m listAndFilterModel) Update(msg tea.Msg) (listAndFilterModel, tea.Cmd) {
 		}
 
 	case listFocus:
-		switch key := msg.(type) {
-		case tea.KeyMsg:
-			if key.String() == "enter" {
+		if key, ok := msg.(tea.KeyMsg); ok {
+			switch key.String() {
+			case "enter":
 				if selectedItem, ok := m.resultsList.SelectedItem().(listItem); ok {
 					return m, func() tea.Msg { return ports.PlaySongMsg{Song: selectedItem.ToSong()} }
+				}
+			case "x":
+				if m.title == "history" {
+					if selectedItem, ok := m.resultsList.SelectedItem().(listItem); ok {
+						songID := selectedItem.ID()
+						if _, isMarked := m.markedForDeletion[songID]; isMarked {
+							delete(m.markedForDeletion, songID)
+						} else {
+							m.markedForDeletion[songID] = struct{}{}
+						}
+						cmd = m.resultsList.SetItems(m.resultsList.Items())
+						return m, cmd
+					}
+				}
+			case "d":
+				if m.title == "history" && len(m.markedForDeletion) > 0 {
+					ids := make([]string, 0, len(m.markedForDeletion))
+					for id := range m.markedForDeletion {
+						ids = append(ids, id)
+					}
+					return m, func() tea.Msg { return ports.DeleteFromHistoryMsg{SongIDs: ids} }
 				}
 			}
 		}
