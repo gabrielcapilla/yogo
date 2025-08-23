@@ -1,5 +1,3 @@
-# Yogo
-
 A terminal-based YouTube music player built with Go. Search, play, and manage your favorite YouTube music videos right from your terminal.
 
 ![Yogo Preview](img/preview.webp)
