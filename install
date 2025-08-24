@@ -1,0 +1,161 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+readonly BINARY_NAME="yogo"
+readonly BUILD_PATH="./cmd/yogo"
+readonly BUILD_FLAGS="-s -w -X 'main.version=0.1.0'"
+
+INSTALL_PATH="/usr/local/bin"
+
+readonly R='\033[1;31m'
+readonly G='\033[1;32m'
+readonly B='\033[1;34m'
+readonly Y='\033[1;33m'
+readonly E='\033[0m'
+
+function log_info() {
+  echo -e "${B}::${E} ${1}"
+}
+
+function log_warn() {
+  echo -e "${Y}::${E} ${1}"
+}
+
+function log_success() {
+  echo -e "${G}::${E} ${1}"
+}
+
+function log_error() {
+  echo -e "${R}::${E} ${1}" >&2
+  exit 1
+}
+
+function show_help() {
+  echo "Usage: $0 [action] [flag]"
+  echo ""
+  echo "Actions:"
+  echo "  help          Shows this help message"
+  echo "  uninstall     Removes ${BINARY_NAME}"
+  echo "  (no action)   Builds and installs ${BINARY_NAME}"
+  echo ""
+  echo "Flags:"
+  echo "  --local       Installs to \$HOME/.local/bin instead of ${INSTALL_PATH}"
+}
+
+function command_exists() {
+  command -v "$1" >/dev/null 2>&1
+}
+
+function check_dependencies() {
+  log_info "Checking dependencies..."
+  local missing_deps=0
+
+  if ! command_exists "go"; then
+    log_warn "Dependency 'go' not found. Please install the Go compiler."
+    missing_deps=1
+  fi
+  if ! command_exists "yt-dlp"; then
+    log_warn "Dependency 'yt-dlp' not found. Please install it (e.g., 'sudo apt install yt-dlp')."
+    missing_deps=1
+  fi
+  if ! command_exists "mpv"; then
+    log_warn "Dependency 'mpv' not found. Please install it (e.g., 'sudo apt install mpv')."
+    missing_deps=1
+  fi
+
+  if [ "$missing_deps" -eq 1 ]; then
+    log_error "One or more dependencies are missing. Aborting."
+  fi
+
+  log_info "All dependencies are present."
+}
+
+function build_binary() {
+  log_info "Building the '${BINARY_NAME}' binary from '${BUILD_PATH}'..."
+  if ! go build -ldflags="${BUILD_FLAGS}" -o "${BINARY_NAME}" "${BUILD_PATH}"; then
+    log_error "Build failed."
+  fi
+  log_info "Build successful."
+}
+
+function make_install() {
+  check_dependencies
+  build_binary
+
+  log_info "Installing '${BINARY_NAME}' to '${INSTALL_PATH}'..."
+
+  if [[ "${INSTALL_PATH}" == "$HOME"* ]]; then
+    mkdir -p "${INSTALL_PATH}"
+    mv "./${BINARY_NAME}" "${INSTALL_PATH}/${BINARY_NAME}"
+    if [[ ":$PATH:" != *":${INSTALL_PATH}:"* ]]; then
+      log_warn "Your PATH does not seem to include '${INSTALL_PATH}'."
+      log_warn "Please add it to your shell configuration (e.g., .bashrc, .zshrc) to run '${BINARY_NAME}' directly."
+    fi
+  else
+    log_info "Superuser privileges (sudo) will be required to continue."
+    if ! sudo mv "./${BINARY_NAME}" "${INSTALL_PATH}/${BINARY_NAME}"; then
+      log_error "Installation failed. Make sure you have sudo permissions."
+    fi
+  fi
+
+  log_success "${BINARY_NAME} has been installed successfully."
+  log_info "You can now run it by typing '${BINARY_NAME}' in your terminal!"
+}
+
+function make_uninstall() {
+  local full_path="${INSTALL_PATH}/${BINARY_NAME}"
+  log_info "Uninstalling '${BINARY_NAME}' from '${INSTALL_PATH}'..."
+
+  if [ ! -f "${full_path}" ]; then
+    log_warn "'${BINARY_NAME}' does not seem to be installed in '${full_path}'. Nothing to do."
+    exit 0
+  fi
+
+  if [[ "${INSTALL_PATH}" == "$HOME"* ]]; then
+    rm -f "${full_path}"
+  else
+    log_info "Superuser privileges (sudo) will be required to continue."
+    if ! sudo rm -f "${full_path}"; then
+      log_error "Uninstallation failed. Make sure you have sudo permissions."
+    fi
+  fi
+
+  log_success "${BINARY_NAME} has been uninstalled successfully."
+}
+
+function main() {
+  local action="install"
+
+  for arg in "$@"; do
+    case "$arg" in
+    --local | -l)
+      INSTALL_PATH="$HOME/.local/bin"
+      shift
+      ;;
+    uninstall | remove | rm)
+      action="uninstall"
+      shift
+      ;;
+    help | --help | -h)
+      action="help"
+      shift
+      ;;
+    *) ;;
+    esac
+  done
+
+  case "$action" in
+  install)
+    make_install
+    ;;
+  uninstall | remove | rm)
+    make_uninstall
+    ;;
+  help)
+    show_help
+    ;;
+  esac
+}
+
+main "$@"
