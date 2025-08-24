@@ -21,7 +21,7 @@ Before installing Yogo, you need to have these tools installed:
 1. **yt-dlp** - For extracting audio streams from YouTube
    ```bash
    # On Arch Linux
-   brew install yt-dlp
+   sudo pacman -S yt-dlp
 
    # On Ubuntu/Debian
    sudo apt install yt-dlp
