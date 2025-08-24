@@ -44,17 +44,51 @@ Check the [releases page](https://github.com/gabrielcapilla/yogo/releases) for t
 
 #### Option 2: Build from Source
 
-```bash
-# Clone the repository
-git clone https://github.com/gabrielcapilla/yogo.git
-cd yogo
+This method uses an automated script to compile and install the application.
 
-# Build the binary
-go build -o yogo ./cmd/yogo
+1.  **Clone the repository:**
+    ```bash
+    git clone https://github.com/gabrielcapilla/yogo.git
+    cd yogo
+    ```
 
-# (Optional) Move to a directory in your PATH
-sudo mv yogo /usr/local/bin/
-```
+2.  **Run the installation script:**
+    The script will check for dependencies, compile the binary, and move it to the appropriate location.
+
+    *   **Recommended: System-wide installation (requires sudo)**
+        This will install `yogo` to `/usr/local/bin`, making it available to all users.
+        ```bash
+        # Make the script executable
+        chmod +x install.sh
+
+        # Run the installer (will prompt for sudo password)
+        ./install.sh
+        ```
+
+    *   **Alternative: Local installation (no sudo needed)**
+        This will install `yogo` to `$HOME/.local/bin`. This is useful if you don't have sudo permissions.
+        ```bash
+        # Make the script executable
+        chmod +x install.sh
+
+        # Run the installer with the --local flag
+        ./install.sh --local
+        ```
+        > **Note:** Make sure that `$HOME/.local/bin` is in your shell's `PATH`. If it's not, you'll need to add `export PATH="$HOME/.local/bin:$PATH"` to your `~/.bashrc` or `~/.zshrc` file.
+
+### Uninstalling
+
+To remove the application, run the same script with the `uninstall` command.
+
+*   **If you installed it system-wide:**
+    ```bash
+    ./install.sh uninstall
+    ```
+
+*   **If you installed it locally:**
+    ```bash
+    ./install.sh uninstall --local
+    ```
 
 ## Usage
 
