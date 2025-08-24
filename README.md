@@ -59,20 +59,20 @@ This method uses an automated script to compile and install the application.
         This will install `yogo` to `/usr/local/bin`, making it available to all users.
         ```bash
         # Make the script executable
-        chmod +x install.sh
+        chmod +x install
 
         # Run the installer (will prompt for sudo password)
-        ./install.sh
+        sh install
         ```
 
     *   **Alternative: Local installation (no sudo needed)**
         This will install `yogo` to `$HOME/.local/bin`. This is useful if you don't have sudo permissions.
         ```bash
         # Make the script executable
-        chmod +x install.sh
+        chmod +x install
 
         # Run the installer with the --local flag
-        ./install.sh --local
+        sh install --local
         ```
         > **Note:** Make sure that `$HOME/.local/bin` is in your shell's `PATH`. If it's not, you'll need to add `export PATH="$HOME/.local/bin:$PATH"` to your `~/.bashrc` or `~/.zshrc` file.
 
@@ -82,12 +82,12 @@ To remove the application, run the same script with the `uninstall` command.
 
 *   **If you installed it system-wide:**
     ```bash
-    ./install.sh uninstall
+    sh install uninstall
     ```
 
 *   **If you installed it locally:**
     ```bash
-    ./install.sh uninstall --local
+    sh install uninstall --local
     ```
 
 ## Usage
